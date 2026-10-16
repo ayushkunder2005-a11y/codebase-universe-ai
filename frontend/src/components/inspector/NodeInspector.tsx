@@ -146,35 +146,35 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/60">
                 <span className="text-slate-400 text-[11px] block">Lines of Code</span>
-                <span className="text-lg font-bold text-sky-300">{node.metrics.loc}</span>
+                <span className="text-lg font-bold text-sky-300">{node.metrics?.loc ?? 0}</span>
               </div>
               <div className="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/60">
                 <span className="text-slate-400 text-[11px] block">Complexity</span>
-                <span className="text-lg font-bold text-amber-300">{node.metrics.complexity}</span>
+                <span className="text-lg font-bold text-amber-300">{node.metrics?.complexity ?? 1}</span>
               </div>
               <div className="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/60">
                 <span className="text-slate-400 text-[11px] block">In-Degree (Used by)</span>
-                <span className="text-lg font-bold text-emerald-300">{node.metrics.in_degree}</span>
+                <span className="text-lg font-bold text-emerald-300">{node.metrics?.in_degree ?? 0}</span>
               </div>
               <div className="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/60">
                 <span className="text-slate-400 text-[11px] block">Out-Degree (Uses)</span>
-                <span className="text-lg font-bold text-purple-300">{node.metrics.out_degree}</span>
+                <span className="text-lg font-bold text-purple-300">{node.metrics?.out_degree ?? 0}</span>
               </div>
             </div>
 
             {/* Risk Factor Banner */}
-            {node.metrics.risk_score > 35 && (
+            {(node.metrics?.risk_score ?? 0) > 35 && (
               <div className="p-3 bg-rose-950/20 border border-rose-800/40 rounded-lg text-xs flex items-center space-x-2 text-rose-300">
                 <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400" />
                 <div>
-                  <div className="font-semibold">Elevated Architectural Risk: {node.metrics.risk_score}/100</div>
+                  <div className="font-semibold">Elevated Architectural Risk: {node.metrics?.risk_score ?? 0}/100</div>
                   <div className="text-[11px] text-rose-400/80 mt-0.5">High coupling or control flow complexity. Review impact before changing.</div>
                 </div>
               </div>
             )}
 
             {/* Docstring */}
-            {node.metadata.docstring && (
+            {node.metadata?.docstring && (
               <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-800 text-xs">
                 <span className="text-slate-500 block text-[10px] uppercase font-semibold mb-1">Docstring</span>
                 <p className="text-slate-300 italic whitespace-pre-line text-[11px]">{node.metadata.docstring}</p>
@@ -182,7 +182,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             )}
 
             {/* Function Parameters */}
-            {node.metadata.parameters && node.metadata.parameters.length > 0 && (
+            {node.metadata?.parameters && node.metadata.parameters.length > 0 && (
               <div className="text-xs">
                 <span className="text-slate-500 block text-[10px] uppercase font-semibold mb-1.5">Parameters</span>
                 <div className="flex flex-wrap gap-1">

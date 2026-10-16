@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 import { CodeGraph, GraphNode, NodeType } from '../../types';
-import { Sliders, RotateCcw, ZoomIn, ZoomOut, Check, Sparkles } from 'lucide-react';
+import { Sliders, RotateCcw, Sparkles } from 'lucide-react';
 
 interface UniverseCanvasProps {
   graph: CodeGraph | null;
@@ -31,7 +31,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   blastRadiusIds = new Set(),
   onSelectNode
 }) => {
-  const mountRef = useRef<HTMLDivElement>(null);
+  // DOM References:
+  // containerRef: Root interactive element capturing clicks/drag/wheel events
+  // canvasMountRef: Dedicated inner element holding ONLY the Three.js <canvas> (ZERO React children)
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasMountRef = useRef<HTMLDivElement>(null);
+
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
@@ -93,10 +98,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
   // 1. Initialize Three.js Scene, Camera, Renderer ONCE on mount
   useEffect(() => {
-    if (!mountRef.current) return;
+    const mountEl = canvasMountRef.current;
+    if (!mountEl) return;
 
-    const width = Math.max(10, mountRef.current.clientWidth || 800);
-    const height = Math.max(10, mountRef.current.clientHeight || 600);
+    const width = Math.max(10, mountEl.clientWidth || 800);
+    const height = Math.max(10, mountEl.clientHeight || 600);
 
     // Scene
     const scene = new THREE.Scene();
@@ -116,8 +122,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     renderer.toneMappingExposure = 1.2;
     rendererRef.current = renderer;
 
-    mountRef.current.innerHTML = '';
-    mountRef.current.appendChild(renderer.domElement);
+    // Mount canvas into dedicated mount container without touching React children
+    while (mountEl.firstChild) {
+      mountEl.removeChild(mountEl.firstChild);
+    }
+    mountEl.appendChild(renderer.domElement);
 
     // Lights
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
@@ -154,9 +163,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
     // Robust ResizeObserver with zero/NaN guards
     const handleResize = () => {
-      if (!mountRef.current || !rendererRef.current || !cameraRef.current) return;
-      const w = mountRef.current.clientWidth;
-      const h = mountRef.current.clientHeight;
+      const container = containerRef.current;
+      if (!container || !rendererRef.current || !cameraRef.current) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
       if (w <= 0 || h <= 0 || isNaN(w) || isNaN(h)) return;
 
       cameraRef.current.aspect = w / h;
@@ -165,7 +175,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     };
 
     const resizeObserver = new ResizeObserver(() => handleResize());
-    resizeObserver.observe(mountRef.current);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
     window.addEventListener('resize', handleResize);
 
     // Handle WebGL context recovery
@@ -212,6 +224,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
+      if (mountEl.contains(renderer.domElement)) {
+        mountEl.removeChild(renderer.domElement);
+      }
       renderer.dispose();
     };
   }, []); // Run once on mount
@@ -221,7 +236,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const graphGroup = graphGroupRef.current;
     if (!graphGroup || !graph) return;
 
-    // Clear previous graph objects from group
+    // Clear previous graph objects from group safely
     while (graphGroup.children.length > 0) {
       const child = graphGroup.children[0];
       graphGroup.remove(child);
@@ -253,7 +268,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         color = 0xfacc15; // Golden yellow for selected
       }
 
-      const riskBoost = node.metrics.risk_score > 50 ? 1.3 : 1.0;
+      const riskScore = node.metrics?.risk_score ?? 0;
+      const riskBoost = riskScore > 50 ? 1.3 : 1.0;
       const size = (BASE_NODE_SIZES[node.type] || 2.0) * riskBoost * nodeSizeScale;
 
       const material = new THREE.MeshStandardMaterial({
@@ -334,7 +350,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     graph.nodes.forEach(node => {
       const mesh = meshes.get(node.id);
       if (mesh) {
-        const riskBoost = node.metrics.risk_score > 50 ? 1.3 : 1.0;
+        const riskScore = node.metrics?.risk_score ?? 0;
+        const riskBoost = riskScore > 50 ? 1.3 : 1.0;
         const size = (BASE_NODE_SIZES[node.type] || 2.0) * riskBoost * nodeSizeScale;
         mesh.scale.set(size, size, size);
       }
@@ -405,28 +422,33 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     }
 
     // Raycast hover detection when not dragging
-    if (!mountRef.current || !cameraRef.current || !sceneRef.current) return;
-    const rect = mountRef.current.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    try {
+      const container = containerRef.current;
+      if (!container || !cameraRef.current || !sceneRef.current) return;
+      const rect = container.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
 
-    const mouse = new THREE.Vector2(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1
-    );
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
 
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(mouse, cameraRef.current);
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, cameraRef.current);
 
-    const meshes = Array.from(nodeMeshesRef.current.values());
-    const intersects = raycaster.intersectObjects(meshes);
+      const meshes = Array.from(nodeMeshesRef.current.values());
+      const intersects = raycaster.intersectObjects(meshes);
 
-    if (intersects.length > 0) {
-      const hitMesh = intersects[0].object as THREE.Mesh;
-      const nodeId = hitMesh.userData.nodeId;
-      const hitNode = nodeMap.get(nodeId);
-      setHoveredNode(hitNode || null);
-    } else {
-      setHoveredNode(null);
+      if (intersects.length > 0) {
+        const hitMesh = intersects[0].object as THREE.Mesh;
+        const nodeId = hitMesh.userData.nodeId;
+        const hitNode = nodeMap.get(nodeId);
+        setHoveredNode(hitNode || null);
+      } else {
+        setHoveredNode(null);
+      }
+    } catch {
+      // Ignore raycasting exceptions
     }
   };
 
@@ -436,28 +458,35 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   };
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!mountRef.current || !cameraRef.current || !sceneRef.current) return;
-    const rect = mountRef.current.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    try {
+      const container = containerRef.current;
+      if (!container || !cameraRef.current || !sceneRef.current) return;
+      const rect = container.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
 
-    const mouse = new THREE.Vector2(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1
-    );
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
 
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(mouse, cameraRef.current);
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, cameraRef.current);
 
-    const meshes = Array.from(nodeMeshesRef.current.values());
-    const intersects = raycaster.intersectObjects(meshes);
+      const meshes = Array.from(nodeMeshesRef.current.values());
+      const intersects = raycaster.intersectObjects(meshes);
 
-    if (intersects.length > 0) {
-      const hitMesh = intersects[0].object as THREE.Mesh;
-      const nodeId = hitMesh.userData.nodeId;
-      const hitNode = nodeMap.get(nodeId);
-      if (hitNode) onSelectNode(hitNode);
-    } else {
+      if (intersects.length > 0) {
+        const hitMesh = intersects[0].object as THREE.Mesh;
+        const nodeId = hitMesh.userData.nodeId;
+        const hitNode = nodeMap.get(nodeId);
+        if (hitNode) {
+          onSelectNode(hitNode);
+          return;
+        }
+      }
       // Clicked on empty space
+      onSelectNode(null);
+    } catch {
       onSelectNode(null);
     }
   };
@@ -480,7 +509,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
   return (
     <div
-      ref={mountRef}
+      ref={containerRef}
       className="relative w-full h-full cursor-grab active:cursor-grabbing overflow-hidden select-none bg-[#07090e]"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -489,7 +518,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       onWheel={handleWheel}
       onContextMenu={e => e.preventDefault()}
     >
-      {/* Floating Hover Tooltip */}
+      {/* Dedicated Canvas Mount Container - Holds ONLY the WebGL Canvas, ZERO React children */}
+      <div ref={canvasMountRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+
+      {/* Floating Hover Tooltip (Safe React sibling overlay) */}
       {hoveredNode && (
         <div
           className="fixed pointer-events-none z-50 glass-panel px-3 py-2 rounded-lg text-xs border border-sky-500/30 shadow-xl"
@@ -514,18 +546,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             <div className="text-slate-400 mt-1 truncate max-w-xs">{hoveredNode.file_path}</div>
           )}
           <div className="flex items-center space-x-3 mt-1.5 pt-1.5 border-t border-slate-700/50 text-[11px]">
-            <span>LOC: <strong className="text-sky-300">{hoveredNode.metrics.loc}</strong></span>
-            <span>Complexity: <strong className="text-amber-300">{hoveredNode.metrics.complexity}</strong></span>
-            {hoveredNode.metrics.risk_score > 0 && (
-              <span>Risk: <strong className={hoveredNode.metrics.risk_score > 50 ? 'text-rose-400' : 'text-slate-300'}>
-                {hoveredNode.metrics.risk_score}
+            <span>LOC: <strong className="text-sky-300">{hoveredNode.metrics?.loc ?? 0}</strong></span>
+            <span>Complexity: <strong className="text-amber-300">{hoveredNode.metrics?.complexity ?? 1}</strong></span>
+            {(hoveredNode.metrics?.risk_score ?? 0) > 0 && (
+              <span>Risk: <strong className={(hoveredNode.metrics?.risk_score ?? 0) > 50 ? 'text-rose-400' : 'text-slate-300'}>
+                {hoveredNode.metrics?.risk_score ?? 0}
               </strong></span>
             )}
           </div>
         </div>
       )}
 
-      {/* On-screen Universe HUD Controls */}
+      {/* On-screen Universe HUD Controls (Safe React sibling overlay) */}
       <div className="absolute bottom-4 left-4 z-20 flex flex-wrap items-center gap-2 glass-panel px-3.5 py-2 rounded-xl text-xs text-slate-300 shadow-lg border border-slate-800/80">
         <span className="flex items-center space-x-1.5">
           <span className="w-2 h-2 rounded-full bg-sky-400 inline-block"></span>

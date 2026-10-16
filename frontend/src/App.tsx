@@ -18,6 +18,7 @@ import { RiskDashboard } from './components/quality/RiskDashboard';
 import { ImpactAnalysisModal } from './components/quality/ImpactAnalysisModal';
 import { RefactorDiffModal } from './components/refactor/RefactorDiffModal';
 import { ImportModal } from './components/sidebar/ImportModal';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Loader2, AlertCircle, Compass } from 'lucide-react';
 
 export function App() {
@@ -203,12 +204,14 @@ export function App() {
               </button>
             </div>
           ) : activeView === '3d' ? (
-            <UniverseCanvas
-              graph={graph}
-              selectedNode={selectedNode}
-              blastRadiusIds={blastRadiusIds}
-              onSelectNode={setSelectedNode}
-            />
+            <ErrorBoundary fallbackTitle="3D Celestial Universe">
+              <UniverseCanvas
+                graph={graph}
+                selectedNode={selectedNode}
+                blastRadiusIds={blastRadiusIds}
+                onSelectNode={setSelectedNode}
+              />
+            </ErrorBoundary>
           ) : (
             <Graph2DView
               graph={graph}
