@@ -78,7 +78,9 @@ flowchart TD
   - **3D Universe Shockwave**: Pulses the entire affected blast radius in bright crimson.
 
 ### 6. 🤖 Source-Grounded AI Codebase Assistant
-- Multi-provider support: **Google Gemini**, **OpenAI GPT-4o**, **Local Ollama**, or **Offline Heuristic Engine**.
+- Multi-provider support: **Local Ollama** (default, 100% offline & private), **Google Gemini**, **OpenAI GPT-4o**, or **Offline Heuristic Engine**.
+- **Real-Time Token Streaming**: Streams responses via Server-Sent Events (SSE) with sub-2-second Time-to-First-Token and live animated cursor.
+- **Custom `codebase-expert` Model**: Tailored Ollama model with physical CPU core binding (`num_thread: 4`), `keep_alive: 60m` warm caching, and high-density, bulleted IT architectural analysis.
 - **Zero Hallucination Guarantee**: Every statement cites verified files and exact line numbers (e.g., `[auth/jwt.py:12-28]`).
 - Transparently labels verified facts versus hypothetical inferences.
 
@@ -95,6 +97,7 @@ flowchart TD
 - **Node.js** v18+ and **npm**
 - **Python** 3.10+ (Python 3.12 recommended)
 - **Git**
+- *(Recommended)* **Ollama** installed locally (`http://localhost:11434`) for private local AI inference.
 - *(Optional)* **MongoDB** (if not installed, Codebase Universe AI automatically uses its zero-config embedded document store).
 
 ---
@@ -109,12 +112,15 @@ cp .env.example .env
 
 Edit `.env` to configure your preferred LLM provider:
 ```ini
-LLM_PROVIDER=gemini        # Options: gemini | openai | ollama | mock
-GEMINI_API_KEY=your_key_here
+LLM_PROVIDER=ollama        # Options: ollama | gemini | openai | mock
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=codebase-expert
 ```
-*(Note: If no API key is configured, the system seamlessly operates in offline static analysis mode).*
 
----
+To build and optimize the custom `codebase-expert` Ollama model:
+```bash
+ollama create codebase-expert -f Modelfile
+```
 
 ### Step 2: Set Up Backend
 
