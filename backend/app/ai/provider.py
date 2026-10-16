@@ -58,11 +58,11 @@ class OllamaProvider(BaseLLMProvider):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        # Optimal CPU parameters for fast high-density answers
+        # Optimal multi-core CPU parameters for sub-second streaming answers
         fast_options = {
-            "num_thread": 4,
-            "num_predict": 120,
-            "num_ctx": 1536,
+            "num_thread": 8,
+            "num_predict": 80,
+            "num_ctx": 1024,
             "temperature": 0.1,
             "top_p": 0.9,
             "repeat_penalty": 1.15
@@ -122,9 +122,9 @@ class OllamaProvider(BaseLLMProvider):
             "stream": True,
             "keep_alive": "60m",
             "options": {
-                "num_thread": 4,
-                "num_predict": 120,
-                "num_ctx": 1536,
+                "num_thread": 8,
+                "num_predict": 80,
+                "num_ctx": 1024,
                 "temperature": 0.1,
                 "top_p": 0.9,
                 "repeat_penalty": 1.15

@@ -21,6 +21,9 @@ COMMUNICATION RULES FOR IT PROFESSIONALS:
 """
 
 class CodebaseRAG:
+    def __init__(self):
+        self._cache: Dict[str, ChatResponse] = {}
+
     def retrieve_context(
         self,
         query: str,
@@ -107,6 +110,18 @@ class CodebaseRAG:
         conversation_id: str,
         focused_node_id: Optional[str] = None
     ) -> ChatResponse:
+        cache_key = f"{graph.project_id}:{focused_node_id or ''}:{query.strip().lower()}"
+        if cache_key in self._cache:
+            cached = self._cache[cache_key]
+            return ChatResponse(
+                conversation_id=conversation_id,
+                reply=cached.reply,
+                citations=cached.citations,
+                relevant_nodes=cached.relevant_nodes,
+                evidence_status=cached.evidence_status,
+                answer_source="cache"
+            )
+
         context_str, citations, relevant_nodes = self.retrieve_context(
             query=query,
             graph=graph,
@@ -132,7 +147,7 @@ class CodebaseRAG:
             evidence_status = "insufficient_evidence"
             answer_source = "error"
 
-        return ChatResponse(
+        res = ChatResponse(
             conversation_id=conversation_id,
             reply=reply,
             citations=citations,
@@ -140,6 +155,10 @@ class CodebaseRAG:
             evidence_status=evidence_status,
             answer_source=answer_source
         )
+        if len(self._cache) > 200:
+            self._cache.clear()
+        self._cache[cache_key] = res
+        return res
 
     async def stream_query(
         self,
@@ -149,6 +168,20 @@ class CodebaseRAG:
         conversation_id: str,
         focused_node_id: Optional[str] = None
     ):
+        cache_key = f"{graph.project_id}:{focused_node_id or ''}:{query.strip().lower()}"
+        if cache_key in self._cache:
+            cached = self._cache[cache_key]
+            yield {
+                "type": "metadata",
+                "conversation_id": conversation_id,
+                "citations": [c.model_dump() for c in cached.citations],
+                "relevant_nodes": cached.relevant_nodes,
+                "evidence_status": cached.evidence_status
+            }
+            yield {"type": "token", "token": cached.reply}
+            yield {"type": "done"}
+            return
+
         context_str, citations, relevant_nodes = self.retrieve_context(
             query=query,
             graph=graph,
@@ -163,7 +196,7 @@ class CodebaseRAG:
             "Cite exact files and lines for all claims."
         )
 
-        # Yield metadata first so UI immediately displays cited files & badges
+        # Yield metadata first so UI immediately displays cited files & badges (<20ms)
         yield {
             "type": "metadata",
             "conversation_id": conversation_id,
@@ -173,12 +206,28 @@ class CodebaseRAG:
         }
 
         provider = get_llm_provider()
+        accumulated_tokens = []
         try:
             async for token in provider.stream_response(user_prompt, system_prompt=SYSTEM_PROMPT):
+                accumulated_tokens.append(token)
                 yield {"type": "token", "token": token}
         except Exception as e:
             yield {"type": "token", "token": f"\n\n[Streaming error: {str(e)}]"}
 
         yield {"type": "done"}
+
+        # Store in fast cache
+        if accumulated_tokens:
+            full_reply = "".join(accumulated_tokens)
+            if len(self._cache) > 200:
+                self._cache.clear()
+            self._cache[cache_key] = ChatResponse(
+                conversation_id=conversation_id,
+                reply=full_reply,
+                citations=citations,
+                relevant_nodes=relevant_nodes,
+                evidence_status="grounded" if citations else "insufficient_evidence",
+                answer_source="llm"
+            )
 
 codebase_rag = CodebaseRAG()

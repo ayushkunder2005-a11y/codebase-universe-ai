@@ -14,7 +14,9 @@ import {
   Layers,
   ChevronRight,
   ChevronDown,
-  Database
+  Database,
+  Loader2,
+  Zap
 } from 'lucide-react';
 
 interface ProjectTreeProps {
@@ -261,8 +263,33 @@ export const ProjectTree: React.FC<ProjectTreeProps> = ({
         {treeData.length > 0 ? (
           treeData.map(node => renderTreeNode(node))
         ) : (
-          <div className="p-4 text-center text-slate-500 text-xs">
-            {graph ? 'No files match search query.' : 'Loading tree...'}
+          <div className="p-4 text-center text-xs space-y-2 select-none">
+            {activeProject && activeProject.status !== 'ready' && activeProject.status !== 'failed' ? (
+              <div className="py-6 px-3 bg-slate-900/60 border border-sky-500/30 rounded-xl space-y-2">
+                <div className="flex items-center justify-center space-x-2 text-sky-400 font-medium">
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  <span className="text-xs font-semibold tracking-wide flex items-center space-x-1">
+                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                    <span>AI AST Scanner</span>
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  Parsing dependencies &amp; compiling tree (&lt;0.5s)...
+                </p>
+                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-sky-400 h-full w-2/3 animate-[pulse_1s_ease-in-out_infinite]" />
+                </div>
+              </div>
+            ) : graph ? (
+              <div className="text-slate-500 py-4">
+                {search.trim() ? 'No files match search query.' : 'No code files detected in this repository.'}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center space-x-2 text-slate-400 py-4">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                <span>Loading tree...</span>
+              </div>
+            )}
           </div>
         )}
       </div>

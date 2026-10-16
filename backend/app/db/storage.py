@@ -3,7 +3,7 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.config import settings
 from app.db.mongo import mongo_db
@@ -44,13 +44,21 @@ class StorageManager:
             except Exception as e:
                 logger.error("Failed to load local DB: %s", e)
 
-    async def _persist_local_db(self):
-        """Persists memory store to local file safely."""
+    def _write_to_disk_sync(self, data: dict):
+        """Synchronous file writer executed in thread pool."""
         try:
             temp_file = self.local_db_file.with_suffix(".tmp")
             with open(temp_file, "w", encoding="utf-8") as f:
-                json.dump(self._memory_cache, f, default=str, indent=2)
+                json.dump(data, f, default=str, separators=(",", ":"))
             temp_file.replace(self.local_db_file)
+        except Exception as e:
+            logger.error("Failed to persist local DB: %s", e)
+
+    async def _persist_local_db(self):
+        """Persists memory store to local file safely in background thread without blocking event loop."""
+        try:
+            snapshot = {k: dict(v) for k, v in self._memory_cache.items()}
+            await asyncio.to_thread(self._write_to_disk_sync, snapshot)
         except Exception as e:
             logger.error("Failed to persist local DB: %s", e)
 
@@ -58,7 +66,8 @@ class StorageManager:
     async def save_project(self, project: Project) -> Project:
         project_dict = project.model_dump()
         project_dict["_id"] = project.id
-        project_dict["updated_at"] = datetime.utcnow().isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
+        project_dict["updated_at"] = now_str
         if isinstance(project_dict.get("created_at"), datetime):
             project_dict["created_at"] = project_dict["created_at"].isoformat()
 
@@ -126,14 +135,14 @@ class StorageManager:
         if project:
             project.status = status
             project.status_message = message
-            project.updated_at = datetime.utcnow()
+            project.updated_at = datetime.now(timezone.utc)
             await self.save_project(project)
 
     async def update_project_stats(self, project_id: str, stats: ProjectStats):
         project = await self.get_project(project_id)
         if project:
             project.stats = stats
-            project.updated_at = datetime.utcnow()
+            project.updated_at = datetime.now(timezone.utc)
             await self.save_project(project)
 
     # ----------------- Graphs -----------------

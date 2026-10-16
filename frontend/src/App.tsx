@@ -69,6 +69,27 @@ export function App() {
     refreshProjects();
   }, [refreshProjects]);
 
+  // Active polling safeguard for non-ready projects (<0.5s resolution)
+  useEffect(() => {
+    if (!activeProject || activeProject.status === 'ready' || activeProject.status === 'failed') {
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const updated = await api.getProject(activeProject.id);
+        if (updated && updated.status !== activeProject.status) {
+          setActiveProject(updated);
+          setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+        }
+      } catch (e) {
+        // Ignore transient poll error
+      }
+    }, 200);
+
+    return () => clearInterval(intervalId);
+  }, [activeProject]);
+
   // Load Graph & Analysis when activeProject or filter changes
   useEffect(() => {
     if (!activeProject) return;
@@ -108,7 +129,7 @@ export function App() {
     });
 
     return () => { isMounted = false; };
-  }, [activeProject, filterType]);
+  }, [activeProject?.id, activeProject?.status, filterType]);
 
   // Handle Citation click in Assistant
   const handleSelectCitation = (citation: ChatCitation) => {
@@ -130,15 +151,18 @@ export function App() {
     }
   };
 
-  // Re-index project
+  // Re-index project with immediate update
   const handleReindex = async () => {
     if (!activeProject) return;
     try {
-      await api.reindexProject(activeProject.id);
-      alert('Reindexing triggered. The universe graph will update shortly.');
+      setLoading(true);
+      const updated = await api.reindexProject(activeProject.id);
+      setActiveProject(updated);
+      setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
       refreshProjects();
     } catch (err: any) {
       alert(`Reindex failed: ${err.message}`);
+      setLoading(false);
     }
   };
 
@@ -277,6 +301,10 @@ export function App() {
           onClose={() => setShowImportModal(false)}
           onProjectLoaded={proj => {
             setActiveProject(proj);
+            setProjects(prev => {
+              const filtered = prev.filter(p => p.id !== proj.id);
+              return [proj, ...filtered];
+            });
             refreshProjects();
           }}
         />
