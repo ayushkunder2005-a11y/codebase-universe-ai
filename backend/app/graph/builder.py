@@ -256,50 +256,88 @@ class GraphBuilder:
         file_nodes = [n for n in nodes if n.type == NodeType.FILE]
         symbol_nodes = [n for n in nodes if n.type in (NodeType.CLASS, NodeType.FUNCTION)]
 
+        # 1. Distribute Directories as Galaxy Cores / Sectors
         dir_pos_map: Dict[str, Tuple[float, float, float]] = {}
         golden_angle = 2.39996323  # radians
-        galaxy_radius_scale = 120.0
+        galaxy_radius_scale = 160.0
 
         for idx, d in enumerate(dir_nodes):
-            r = math.sqrt(idx + 1) * galaxy_radius_scale
-            theta = idx * golden_angle
-            x = r * math.cos(theta)
-            z = r * math.sin(theta)
-            y = (math.sin(idx * 1.5) * 20.0)
+            if idx == 0 and len(dir_nodes) == 1:
+                x, y, z = 0.0, 0.0, 0.0
+            else:
+                r = 100.0 + math.sqrt(idx + 1) * galaxy_radius_scale
+                theta = idx * golden_angle
+                x = r * math.cos(theta)
+                z = r * math.sin(theta)
+                y = math.sin(idx * 1.5) * 30.0
             d.position = Position3D(x=round(x, 2), y=round(y, 2), z=round(z, 2))
             dir_pos_map[d.id] = (x, y, z)
 
-        file_pos_map: Dict[str, Tuple[float, float, float]] = {}
-        dir_child_count: Dict[str, int] = {}
-
+        # 2. Distribute Files per Directory in Generous Orbital Shells
+        files_by_dir: Dict[str, List[GraphNode]] = {}
         for f in file_nodes:
-            parent_id = f.parent_id
+            parent = f.parent_id or "root"
+            files_by_dir.setdefault(parent, []).append(f)
+
+        file_pos_map: Dict[str, Tuple[float, float, float]] = {}
+        for parent_id, files in files_by_dir.items():
             center = dir_pos_map.get(parent_id, (0.0, 0.0, 0.0))
-            count = dir_child_count.get(parent_id, 0)
-            dir_child_count[parent_id] = count + 1
+            count = len(files)
+            for idx, f in enumerate(files):
+                # Multi-shell distribution around directory
+                shell = idx // 6
+                pos_in_shell = idx % 6
+                shell_capacity = min(6 + shell * 4, max(1, count - shell * 6))
+                ring_r = 75.0 + shell * 60.0
+                phi = (pos_in_shell * 2 * math.pi / max(1, shell_capacity)) + (shell * 0.52)
 
-            orbit_r = 30.0 + (count % 4) * 15.0
-            phi = count * (2 * math.pi / 7)
-            fx = center[0] + orbit_r * math.cos(phi)
-            fz = center[2] + orbit_r * math.sin(phi)
-            fy = center[1] + ((count % 3) - 1) * 10.0
+                fx = center[0] + ring_r * math.cos(phi)
+                fz = center[2] + ring_r * math.sin(phi)
+                fy = center[1] + math.sin(idx * 1.7) * 20.0
 
-            f.position = Position3D(x=round(fx, 2), y=round(fy, 2), z=round(fz, 2))
-            file_pos_map[f.id] = (fx, fy, fz)
+                f.position = Position3D(x=round(fx, 2), y=round(fy, 2), z=round(fz, 2))
+                file_pos_map[f.id] = (fx, fy, fz)
 
-        file_sym_count: Dict[str, int] = {}
+        # 3. Distribute Symbols (Classes & Functions) per File with Anti-Collision Planetary Shells
+        symbols_by_file: Dict[str, List[GraphNode]] = {}
         for s in symbol_nodes:
-            parent_id = s.parent_id
+            parent = s.parent_id or "unknown"
+            symbols_by_file.setdefault(parent, []).append(s)
+
+        for parent_id, symbols in symbols_by_file.items():
             center = file_pos_map.get(parent_id, (0.0, 0.0, 0.0))
-            count = file_sym_count.get(parent_id, 0)
-            file_sym_count[parent_id] = count + 1
+            classes = [s for s in symbols if s.type == NodeType.CLASS]
+            funcs = [s for s in symbols if s.type == NodeType.FUNCTION]
 
-            orbit_r = 10.0 + (count % 3) * 6.0
-            alpha = count * (2 * math.pi / 5)
-            sx = center[0] + orbit_r * math.cos(alpha)
-            sz = center[2] + orbit_r * math.sin(alpha)
-            sy = center[1] + ((count % 2) * 2 - 1) * 5.0
+            # Place classes on inner orbit
+            for c_idx, c in enumerate(classes):
+                c_capacity = max(1, len(classes))
+                orbit_r = 38.0
+                theta = (c_idx * 2 * math.pi / c_capacity)
+                cx = center[0] + orbit_r * math.cos(theta)
+                cz = center[2] + orbit_r * math.sin(theta)
+                cy = center[1] + ((c_idx % 2) * 2 - 1) * 6.0
+                c.position = Position3D(x=round(cx, 2), y=round(cy, 2), z=round(cz, 2))
 
-            s.position = Position3D(x=round(sx, 2), y=round(sy, 2), z=round(sz, 2))
+            # Place functions on expanding planetary shells
+            start_radius = 52.0 if classes else 36.0
+            shell_capacities = [6, 10, 14, 18, 22]
+
+            f_placed = 0
+            curr_shell = 0
+            while f_placed < len(funcs):
+                cap = shell_capacities[min(curr_shell, len(shell_capacities) - 1)]
+                funcs_in_shell = funcs[f_placed:f_placed + cap]
+                orbit_r = start_radius + curr_shell * 26.0
+
+                for s_idx, fn in enumerate(funcs_in_shell):
+                    phi = (s_idx * 2 * math.pi / max(1, len(funcs_in_shell))) + (curr_shell * 0.45)
+                    sx = center[0] + orbit_r * math.cos(phi)
+                    sz = center[2] + orbit_r * math.sin(phi)
+                    sy = center[1] + ((s_idx % 3) - 1) * 7.0
+                    fn.position = Position3D(x=round(sx, 2), y=round(sy, 2), z=round(sz, 2))
+
+                f_placed += len(funcs_in_shell)
+                curr_shell += 1
 
 graph_builder = GraphBuilder()

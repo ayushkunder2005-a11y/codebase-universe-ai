@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
-import { CodeGraph, GraphNode, NodeType } from '../../types';
-import { Sliders, RotateCcw, Sparkles } from 'lucide-react';
+import { CodeGraph, GraphNode, NodeType, GraphEdge } from '../../types';
+import { Sliders, RotateCcw, Sparkles, Eye, EyeOff, Layers, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 interface UniverseCanvasProps {
   graph: CodeGraph | null;
@@ -25,15 +25,15 @@ const BASE_NODE_SIZES: Record<NodeType, number> = {
   function: 1.6
 };
 
+type ViewFilter = 'all' | 'files_only';
+
 export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   graph,
   selectedNode,
   blastRadiusIds = new Set(),
   onSelectNode
 }) => {
-  // DOM References:
-  // containerRef: Root interactive element capturing clicks/drag/wheel events
-  // canvasMountRef: Dedicated inner element holding ONLY the Three.js <canvas> (ZERO React children)
+  // DOM References
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasMountRef = useRef<HTMLDivElement>(null);
 
@@ -45,6 +45,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   const [spreadScale, setSpreadScale] = useState(1.0);
   const [showSizeControls, setShowSizeControls] = useState(false);
 
+  // View Options
+  const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
+  const [showContainment, setShowContainment] = useState(false); // Default false to prevent hairball!
+
   // Three.js References (Persistent across renders)
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -52,6 +56,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   const graphGroupRef = useRef<THREE.Group | null>(null);
   const nodeMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
   const edgesLineRef = useRef<THREE.LineSegments | null>(null);
+  const activeEdgesRef = useRef<GraphEdge[]>([]);
   const starFieldRef = useRef<THREE.Points | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
@@ -70,6 +75,51 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     }
     return map;
   }, [graph]);
+
+  // Filtered Nodes based on current View Filter
+  const visibleNodes = useMemo(() => {
+    if (!graph) return [];
+    if (viewFilter === 'files_only') {
+      return graph.nodes.filter(n => n.type === 'directory' || n.type === 'file');
+    }
+    return graph.nodes;
+  }, [graph, viewFilter]);
+
+  const visibleNodeIdSet = useMemo(() => {
+    return new Set(visibleNodes.map(n => n.id));
+  }, [visibleNodes]);
+
+  // Active Focus Node: Hovered or Selected
+  const activeFocusNode = hoveredNode || selectedNode;
+
+  // Precompute neighborhood for active focus
+  const neighborhood = useMemo(() => {
+    if (!graph || !activeFocusNode) return null;
+    const focusId = activeFocusNode.id;
+
+    const outgoingNeighbors = new Set<string>();
+    const incomingNeighbors = new Set<string>();
+    const connectedEdgeIds = new Set<string>();
+
+    graph.edges.forEach(e => {
+      if (e.source === focusId && visibleNodeIdSet.has(e.target)) {
+        outgoingNeighbors.add(e.target);
+        connectedEdgeIds.add(e.id);
+      }
+      if (e.target === focusId && visibleNodeIdSet.has(e.source)) {
+        incomingNeighbors.add(e.source);
+        connectedEdgeIds.add(e.id);
+      }
+    });
+
+    return {
+      focusId,
+      outgoingNeighbors,
+      incomingNeighbors,
+      connectedEdgeIds,
+      allNeighbors: new Set([...outgoingNeighbors, ...incomingNeighbors, focusId])
+    };
+  }, [graph, activeFocusNode, visibleNodeIdSet]);
 
   // Update camera position from spherical coordinates
   const updateCameraPosition = useCallback(() => {
@@ -91,7 +141,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       const pz = (selectedNode.position?.z ?? 0) * spreadScale;
 
       cameraTargetRef.current.set(px, py, pz);
-      cameraSphericalRef.current.radius = 85;
+      cameraSphericalRef.current.radius = 90;
       updateCameraPosition();
     }
   }, [selectedNode, spreadScale, updateCameraPosition]);
@@ -129,11 +179,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     mountEl.appendChild(renderer.domElement);
 
     // Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
     scene.add(ambientLight);
 
-    const pointLight = new THREE.PointLight(0x38bdf8, 2.5, 900);
-    pointLight.position.set(0, 120, 0);
+    const pointLight = new THREE.PointLight(0x38bdf8, 2.8, 1000);
+    pointLight.position.set(0, 150, 0);
     scene.add(pointLight);
 
     // Deep Space Stars Background
@@ -194,7 +244,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       // Subtle celestial rotation
       if (starFieldRef.current) {
-        starFieldRef.current.rotation.y = elapsedTime * 0.008;
+        starFieldRef.current.rotation.y = elapsedTime * 0.006;
       }
 
       // Smooth pulsing on selected / blast radius nodes
@@ -231,7 +281,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     };
   }, []); // Run once on mount
 
-  // 2. Build or Rebuild Graph Objects when graph or spread changes
+  // 2. Build or Rebuild Graph Meshes & Edges when graph, filter, containment or spread changes
   useEffect(() => {
     const graphGroup = graphGroupRef.current;
     if (!graphGroup || !graph) return;
@@ -254,13 +304,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const nodeMeshMap = new Map<string, THREE.Mesh>();
     nodeMeshesRef.current = nodeMeshMap;
 
-    if (graph.nodes.length === 0) return;
+    if (visibleNodes.length === 0) return;
 
     // Shared sphere geometry
     const sphereGeo = new THREE.SphereGeometry(1, 16, 16);
 
     // Create Nodes
-    graph.nodes.forEach(node => {
+    visibleNodes.forEach(node => {
       let color = NODE_COLORS[node.type] || 0x38bdf8;
       if (blastRadiusIds.has(node.id)) {
         color = 0xf43f5e; // Rose for blast radius
@@ -277,7 +327,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         roughness: 0.3,
         metalness: 0.2,
         emissive: color,
-        emissiveIntensity: selectedNode?.id === node.id || blastRadiusIds.has(node.id) ? 0.85 : 0.25
+        emissiveIntensity: selectedNode?.id === node.id || blastRadiusIds.has(node.id) ? 0.85 : 0.25,
+        transparent: false,
+        opacity: 1.0
       });
 
       const mesh = new THREE.Mesh(sphereGeo, material);
@@ -293,11 +345,20 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       nodeMeshMap.set(node.id, mesh);
     });
 
+    // Filter Edges: only include edges between visible nodes, exclude contains by default
+    const filteredEdges: GraphEdge[] = [];
+    graph.edges.forEach(edge => {
+      if (!visibleNodeIdSet.has(edge.source) || !visibleNodeIdSet.has(edge.target)) return;
+      if (edge.type === 'contains' && !showContainment) return;
+      filteredEdges.push(edge);
+    });
+    activeEdgesRef.current = filteredEdges;
+
     // Create Constellation Edges
     const edgePositions: number[] = [];
     const edgeColors: number[] = [];
 
-    graph.edges.forEach(edge => {
+    filteredEdges.forEach(edge => {
       const srcNode = nodeMap.get(edge.source);
       const tgtNode = nodeMap.get(edge.target);
       if (srcNode && tgtNode) {
@@ -318,7 +379,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         else if (edge.type === 'inherits_from') edgeColor = new THREE.Color(0xc084fc);
 
         if (selectedNode && (edge.source === selectedNode.id || edge.target === selectedNode.id)) {
-          edgeColor = new THREE.Color(0xfacc15); // Highlight connected edges
+          edgeColor = new THREE.Color(0xfacc15);
         }
 
         edgeColors.push(edgeColor.r, edgeColor.g, edgeColor.b);
@@ -340,14 +401,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       const lineSegments = new THREE.LineSegments(lineGeo, lineMat);
       graphGroup.add(lineSegments);
       edgesLineRef.current = lineSegments;
+    } else {
+      edgesLineRef.current = null;
     }
-  }, [graph, spreadScale]); // Rebuild meshes when graph structure or spread changes
+  }, [graph, visibleNodes, visibleNodeIdSet, spreadScale, showContainment]);
 
   // 3. Fast reactive scale update (WITHOUT recreating meshes or WebGL context)
   useEffect(() => {
     if (!graph) return;
     const meshes = nodeMeshesRef.current;
-    graph.nodes.forEach(node => {
+    visibleNodes.forEach(node => {
       const mesh = meshes.get(node.id);
       if (mesh) {
         const riskScore = node.metrics?.risk_score ?? 0;
@@ -356,30 +419,95 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         mesh.scale.set(size, size, size);
       }
     });
-  }, [nodeSizeScale, graph]);
+  }, [nodeSizeScale, graph, visibleNodes]);
 
-  // 4. Fast reactive color & emissive update for selection and blast radius
+  // 4. Reactive Neighborhood Highlight & Dimming (Instant, zero FPS lag)
   useEffect(() => {
     const meshes = nodeMeshesRef.current;
+    if (!graph || meshes.size === 0) return;
+
+    const focusId = neighborhood?.focusId;
+
+    // Update node meshes opacity & emissive
     meshes.forEach((mesh, id) => {
       const node = nodeMap.get(id);
       if (!node) return;
 
-      let colorHex = NODE_COLORS[node.type] || 0x38bdf8;
-      const isBlast = blastRadiusIds.has(id);
-      const isSelected = selectedNode?.id === id;
-
-      if (isBlast) colorHex = 0xf43f5e;
-      else if (isSelected) colorHex = 0xfacc15;
-
       const mat = mesh.material as THREE.MeshStandardMaterial;
-      if (mat) {
-        mat.color.setHex(colorHex);
-        mat.emissive.setHex(colorHex);
-        mat.emissiveIntensity = isSelected || isBlast ? 0.85 : 0.25;
+      if (!mat) return;
+
+      const isBlast = blastRadiusIds.has(id);
+      const isFocus = id === focusId;
+      const isOutgoing = neighborhood?.outgoingNeighbors.has(id);
+      const isIncoming = neighborhood?.incomingNeighbors.has(id);
+      const isNeighbor = neighborhood?.allNeighbors.has(id);
+
+      let colorHex = NODE_COLORS[node.type] || 0x38bdf8;
+      if (isBlast) colorHex = 0xf43f5e;
+      else if (isFocus) colorHex = 0xfacc15; // Golden yellow
+      else if (isOutgoing) colorHex = 0x38bdf8; // Outgoing dependency: bright sky cyan
+      else if (isIncoming) colorHex = 0x34d399; // Incoming caller: bright emerald green
+
+      mat.color.setHex(colorHex);
+      mat.emissive.setHex(colorHex);
+
+      if (focusId) {
+        if (isFocus || isNeighbor || isBlast) {
+          mat.transparent = false;
+          mat.opacity = 1.0;
+          mat.emissiveIntensity = isFocus ? 0.95 : 0.65;
+        } else {
+          mat.transparent = true;
+          mat.opacity = 0.12; // Dim unrelated nodes
+          mat.emissiveIntensity = 0.04;
+        }
+      } else {
+        mat.transparent = false;
+        mat.opacity = 1.0;
+        mat.emissiveIntensity = isBlast ? 0.85 : 0.25;
       }
     });
-  }, [selectedNode, blastRadiusIds, nodeMap]);
+
+    // Update line colors & opacity
+    if (edgesLineRef.current) {
+      const lineGeo = edgesLineRef.current.geometry;
+      const colors = lineGeo.attributes.color as THREE.BufferAttribute;
+
+      const lineMat = edgesLineRef.current.material as THREE.LineBasicMaterial;
+      if (lineMat) {
+        lineMat.opacity = focusId ? 0.75 : 0.45;
+      }
+
+      let colorIdx = 0;
+      activeEdgesRef.current.forEach(edge => {
+        let edgeColor = new THREE.Color(0x334155);
+        if (edge.type === 'imports') edgeColor = new THREE.Color(0x38bdf8);
+        else if (edge.type === 'calls') edgeColor = new THREE.Color(0x34d399);
+        else if (edge.type === 'inherits_from') edgeColor = new THREE.Color(0xc084fc);
+
+        if (focusId) {
+          if (edge.source === focusId) {
+            edgeColor = new THREE.Color(0x38bdf8); // Outgoing: sky cyan
+          } else if (edge.target === focusId) {
+            edgeColor = new THREE.Color(0x34d399); // Incoming: emerald green
+          } else {
+            edgeColor = new THREE.Color(0x0a0f1d); // Dimmed to almost invisible dark
+          }
+        }
+
+        if (colors && colorIdx + 5 < colors.array.length) {
+          colors.array[colorIdx] = edgeColor.r;
+          colors.array[colorIdx + 1] = edgeColor.g;
+          colors.array[colorIdx + 2] = edgeColor.b;
+          colors.array[colorIdx + 3] = edgeColor.r;
+          colors.array[colorIdx + 4] = edgeColor.g;
+          colors.array[colorIdx + 5] = edgeColor.b;
+          colorIdx += 6;
+        }
+      });
+      if (colors) colors.needsUpdate = true;
+    }
+  }, [neighborhood, blastRadiusIds, nodeMap, graph]);
 
   // Raycasting for Mouse Interaction & Selection
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -484,7 +612,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           return;
         }
       }
-      // Clicked on empty space
       onSelectNode(null);
     } catch {
       onSelectNode(null);
@@ -521,10 +648,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       {/* Dedicated Canvas Mount Container - Holds ONLY the WebGL Canvas, ZERO React children */}
       <div ref={canvasMountRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
-      {/* Floating Hover Tooltip (Safe React sibling overlay) */}
+      {/* Floating Hover Tooltip */}
       {hoveredNode && (
         <div
-          className="fixed pointer-events-none z-50 glass-panel px-3 py-2 rounded-lg text-xs border border-sky-500/30 shadow-xl"
+          className="fixed pointer-events-none z-50 glass-panel px-3 py-2.5 rounded-lg text-xs border border-sky-500/40 shadow-2xl backdrop-blur-md bg-slate-950/90"
           style={{
             left: `${mousePos.x + 16}px`,
             top: `${mousePos.y + 16}px`
@@ -534,7 +661,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             <span
               className="w-2.5 h-2.5 rounded-full"
               style={{
-                backgroundColor: `#${NODE_COLORS[hoveredNode.type].toString(16).padStart(6, '0')}`
+                backgroundColor: `#${(NODE_COLORS[hoveredNode.type] || 0x38bdf8).toString(16).padStart(6, '0')}`
               }}
             />
             <span className="text-white font-semibold">{hoveredNode.name}</span>
@@ -545,19 +672,72 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           {hoveredNode.file_path && (
             <div className="text-slate-400 mt-1 truncate max-w-xs">{hoveredNode.file_path}</div>
           )}
-          <div className="flex items-center space-x-3 mt-1.5 pt-1.5 border-t border-slate-700/50 text-[11px]">
-            <span>LOC: <strong className="text-sky-300">{hoveredNode.metrics?.loc ?? 0}</strong></span>
-            <span>Complexity: <strong className="text-amber-300">{hoveredNode.metrics?.complexity ?? 1}</strong></span>
-            {(hoveredNode.metrics?.risk_score ?? 0) > 0 && (
-              <span>Risk: <strong className={(hoveredNode.metrics?.risk_score ?? 0) > 50 ? 'text-rose-400' : 'text-slate-300'}>
-                {hoveredNode.metrics?.risk_score ?? 0}
-              </strong></span>
-            )}
+          <div className="flex items-center space-x-3 mt-2 pt-1.5 border-t border-slate-800 text-[11px]">
+            <span>In-Degree: <strong className="text-emerald-400">{hoveredNode.metrics?.in_degree ?? 0}</strong></span>
+            <span>Out-Degree: <strong className="text-sky-400">{hoveredNode.metrics?.out_degree ?? 0}</strong></span>
+            <span>Risk: <strong className="text-amber-400">{hoveredNode.metrics?.risk_score ?? 0}</strong></span>
           </div>
+          {neighborhood?.focusId === hoveredNode.id && (
+            <div className="mt-1 text-[10px] text-sky-300 font-medium">
+              Connected: {neighborhood.outgoingNeighbors.size} dependencies, {neighborhood.incomingNeighbors.size} callers
+            </div>
+          )}
         </div>
       )}
 
-      {/* On-screen Universe HUD Controls (Safe React sibling overlay) */}
+      {/* Top Right Navigation & Filter Toolbar */}
+      <div className="absolute top-4 right-4 z-20 flex items-center space-x-2 glass-panel p-1.5 rounded-xl text-xs text-slate-300 shadow-xl border border-slate-700/50">
+        {/* Level of Detail Filter */}
+        <div className="flex bg-slate-900/80 rounded-lg p-0.5 border border-slate-800">
+          <button
+            onClick={() => setViewFilter('all')}
+            className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${
+              viewFilter === 'all'
+                ? 'bg-sky-500 text-slate-950 font-bold shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Show All Nodes (Directories, Files, Functions, Classes)"
+          >
+            All Universe
+          </button>
+          <button
+            onClick={() => setViewFilter('files_only')}
+            className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${
+              viewFilter === 'files_only'
+                ? 'bg-sky-500 text-slate-950 font-bold shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Clean Architectural View: Files & Folders only"
+          >
+            Files Only
+          </button>
+        </div>
+
+        {/* Toggle Containment Lines */}
+        <button
+          onClick={() => setShowContainment(v => !v)}
+          className={`flex items-center space-x-1.5 px-2 py-1 rounded-lg text-[11px] font-medium transition-all ${
+            showContainment
+              ? 'bg-indigo-600/60 text-indigo-200 border border-indigo-400/40'
+              : 'bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700/50'
+          }`}
+          title="Toggle parent-child directory containment lines"
+        >
+          {showContainment ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+          <span>Hierarchy Lines</span>
+        </button>
+
+        {/* Reset View */}
+        <button
+          onClick={handleResetView}
+          className="p-1 hover:text-white hover:bg-slate-800 rounded transition-colors"
+          title="Reset Camera & Sizing"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* On-screen Universe HUD Controls (Bottom Left) */}
       <div className="absolute bottom-4 left-4 z-20 flex flex-wrap items-center gap-2 glass-panel px-3.5 py-2 rounded-xl text-xs text-slate-300 shadow-lg border border-slate-800/80">
         <span className="flex items-center space-x-1.5">
           <span className="w-2 h-2 rounded-full bg-sky-400 inline-block"></span>
@@ -679,7 +859,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         </div>
 
         <div className="border-l border-slate-700 h-4 mx-1"></div>
-        <span className="text-[11px] text-slate-400">Left-click: Rotate • Right-click: Pan • Scroll: Zoom</span>
+        <span className="text-[11px] text-slate-400">Left-drag: Orbit • Right-drag: Pan • Scroll: Zoom • Hover: Isolate</span>
       </div>
     </div>
   );
