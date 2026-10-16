@@ -5,6 +5,7 @@ import {
   ImpactAnalysisResult,
   ChatResponse,
   ChatMessage,
+  ChatCitation,
   RefactorProposal,
   ApplyPatchResult
 } from '../types';
@@ -140,6 +141,65 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to send message');
     return res.json();
+  },
+
+  async sendChatMessageStream(
+    projectId: string,
+    message: string,
+    onToken: (token: string) => void,
+    onMetadata?: (meta: { citations: ChatCitation[]; relevant_nodes: string[]; evidence_status: string }) => void,
+    conversationId?: string,
+    focusedNodeId?: string
+  ): Promise<void> {
+    const res = await fetch(`${BASE_URL}/api/projects/${projectId}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_id: projectId,
+        message,
+        conversation_id: conversationId,
+        focused_node_id: focusedNodeId
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to connect stream' }));
+      throw new Error(err.detail || 'Streaming connection failed');
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('No readable stream available');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(trimmed.slice(6));
+          if (event.type === 'metadata' && onMetadata) {
+            onMetadata({
+              citations: event.citations || [],
+              relevant_nodes: event.relevant_nodes || [],
+              evidence_status: event.evidence_status || 'grounded'
+            });
+          } else if (event.type === 'token') {
+            onToken(event.token);
+          }
+        } catch {
+          // ignore malformed SSE chunks
+        }
+      }
+    }
   },
 
   async getConversation(projectId: string, conversationId: string): Promise<ChatMessage[]> {

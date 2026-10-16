@@ -53,13 +53,13 @@ class CodebaseRAG:
             if score > 0:
                 matched_nodes.append((score, node))
 
-        # Sort by relevance and take top 6 nodes
+        # Sort by relevance and take top 3 most relevant nodes for ultra-fast CPU prompt evaluation
         matched_nodes.sort(key=lambda x: x[0], reverse=True)
-        top_nodes = [item[1] for item in matched_nodes[:6]]
+        top_nodes = [item[1] for item in matched_nodes[:3]]
 
-        # If no direct matches, include 2 core files
+        # If no direct matches, include top 2 files
         if not top_nodes:
-            top_nodes = [n for n in graph.nodes if n.type == NodeType.FILE][:3]
+            top_nodes = [n for n in graph.nodes if n.type == NodeType.FILE][:2]
 
         for node in top_nodes:
             relevant_node_ids.append(node.id)
@@ -75,14 +75,15 @@ class CodebaseRAG:
                     lines = f.readlines()
 
                 start = max(1, node.line_start or 1)
-                end = min(len(lines), node.line_end or min(100, len(lines)))
+                end = min(len(lines), node.line_end or min(start + 25, len(lines)))
+                # Keep snippet compact (max 25 lines) for instant prompt evaluation
                 snippet_text = "".join(lines[start - 1:end])
 
                 citations.append(ChatCitation(
                     file_path=node.file_path,
                     line_start=start,
                     line_end=end,
-                    snippet=snippet_text[:350] + ("..." if len(snippet_text) > 350 else ""),
+                    snippet=snippet_text[:280] + ("..." if len(snippet_text) > 280 else ""),
                     entity_name=node.name,
                     entity_type=node.type.value,
                     verified=True
@@ -90,7 +91,7 @@ class CodebaseRAG:
 
                 context_snippets.append(
                     f"--- File: {node.file_path} (Lines {start}-{end}) Symbol: {node.name} ({node.type.value}) ---\n"
-                    f"{snippet_text}\n"
+                    f"{snippet_text[:600]}\n"
                 )
             except Exception:
                 pass
@@ -139,5 +140,45 @@ class CodebaseRAG:
             evidence_status=evidence_status,
             answer_source=answer_source
         )
+
+    async def stream_query(
+        self,
+        query: str,
+        graph: CodeGraph,
+        repo_dir: Path,
+        conversation_id: str,
+        focused_node_id: Optional[str] = None
+    ):
+        context_str, citations, relevant_nodes = self.retrieve_context(
+            query=query,
+            graph=graph,
+            repo_dir=repo_dir,
+            focused_node_id=focused_node_id
+        )
+
+        user_prompt = (
+            f"USER QUESTION: {query}\n\n"
+            f"RELEVANT CODEBASE CONTEXT:\n{context_str}\n\n"
+            "Please answer the user question using only the verified code context above. "
+            "Cite exact files and lines for all claims."
+        )
+
+        # Yield metadata first so UI immediately displays cited files & badges
+        yield {
+            "type": "metadata",
+            "conversation_id": conversation_id,
+            "citations": [c.model_dump() for c in citations],
+            "relevant_nodes": relevant_nodes,
+            "evidence_status": "grounded" if citations else "insufficient_evidence"
+        }
+
+        provider = get_llm_provider()
+        try:
+            async for token in provider.stream_response(user_prompt, system_prompt=SYSTEM_PROMPT):
+                yield {"type": "token", "token": token}
+        except Exception as e:
+            yield {"type": "token", "token": f"\n\n[Streaming error: {str(e)}]"}
+
+        yield {"type": "done"}
 
 codebase_rag = CodebaseRAG()

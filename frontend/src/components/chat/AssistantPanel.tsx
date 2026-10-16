@@ -105,39 +105,62 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
       relevant_nodes: selectedNode ? [selectedNode.id] : []
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    const asstMsgId = (Date.now() + 1).toString();
+    const placeholderAsstMsg: ChatMessage = {
+      id: asstMsgId,
+      sender: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+      citations: [],
+      relevant_nodes: [],
+      answer_source: 'llm'
+    };
+
+    setMessages(prev => [...prev, userMsg, placeholderAsstMsg]);
     setInput('');
     setLoading(true);
 
     try {
-      const res = await api.sendChatMessage(
+      await api.sendChatMessageStream(
         projectId,
         textToSend,
+        (token) => {
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === asstMsgId ? { ...msg, content: msg.content + token } : msg
+            )
+          );
+        },
+        (meta) => {
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === asstMsgId
+                ? {
+                    ...msg,
+                    citations: meta.citations,
+                    relevant_nodes: meta.relevant_nodes,
+                    evidence_status: meta.evidence_status
+                  }
+                : msg
+            )
+          );
+        },
         undefined,
         selectedNode?.id
       );
-
-      const asstMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: 'assistant',
-        content: res.reply,
-        timestamp: new Date().toISOString(),
-        citations: res.citations,
-        relevant_nodes: res.relevant_nodes,
-        answer_source: res.answer_source
-      };
-
-      setMessages(prev => [...prev, asstMsg]);
     } catch (err: any) {
-      setMessages(prev => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          sender: 'assistant',
-          content: `Error: ${err.message || 'Failed to reach Ollama AI engine'}. Ensure Ollama is running at localhost:11434.`,
-          timestamp: new Date().toISOString()
-        }
-      ]);
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === asstMsgId
+            ? {
+                ...msg,
+                content: msg.content
+                  ? msg.content + `\n\n[Stream disconnected: ${err.message}]`
+                  : `Error: ${err.message || 'Failed to reach Ollama AI engine'}. Ensure Ollama is running at localhost:11434.`
+              }
+            : msg
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -257,7 +280,19 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
                   : 'bg-slate-900/90 text-slate-200 border border-slate-800 rounded-bl-none shadow-lg whitespace-pre-wrap'
               }`}
             >
-              {msg.content}
+              {msg.sender === 'assistant' && !msg.content && loading ? (
+                <div className="flex items-center space-x-2 text-slate-400 py-0.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                  <span className="text-[11px] text-slate-400 italic">Streaming architecture analysis...</span>
+                </div>
+              ) : (
+                <>
+                  {msg.content}
+                  {msg.sender === 'assistant' && loading && (
+                    <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
+                  )}
+                </>
+              )}
 
               {/* Citations section */}
               {msg.citations && msg.citations.length > 0 && (
@@ -283,13 +318,6 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
             </div>
           </div>
         ))}
-
-        {loading && (
-          <div className="flex items-center space-x-2 p-3 bg-slate-900/70 border border-slate-800 rounded-xl max-w-[85%] text-slate-300">
-            <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-            <span>Ollama ({ollamaStatus?.active_model || 'llama3.2:1b'}) is synthesizing grounded response...</span>
-          </div>
-        )}
 
         <div ref={messagesEndRef} />
       </div>

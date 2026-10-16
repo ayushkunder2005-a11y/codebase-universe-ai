@@ -10,6 +10,11 @@ class BaseLLMProvider:
     async def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         raise NotImplementedError
 
+    async def stream_response(self, prompt: str, system_prompt: Optional[str] = None):
+        """Default stream fallback yielding full response"""
+        result = await self.generate_response(prompt, system_prompt)
+        yield result
+
 class OllamaProvider(BaseLLMProvider):
     """
     Dedicated provider for local Ollama engine.
@@ -30,30 +35,40 @@ class OllamaProvider(BaseLLMProvider):
             logger.warning("Could not reach Ollama at %s: %s", self.base_url, e)
         return []
 
-    async def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        # Check installed models and auto-resolve
-        available = await self.get_available_models()
+    def _resolve_model(self, available: List[str]) -> str:
         active_model = self.model
         if available and active_model not in available:
-            # Check without tags (e.g. llama3.2 vs llama3.2:latest)
             matched = next((m for m in available if m.startswith(active_model) or active_model.startswith(m.split(":")[0])), None)
             active_model = matched or available[0]
             logger.info("Ollama auto-selected installed model: %s", active_model)
+        return active_model
+
+    async def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        available = await self.get_available_models()
+        active_model = self._resolve_model(available)
 
         if not available and not active_model:
             raise RuntimeError(
-                "Ollama is running on localhost:11434, but no models are downloaded yet. "
-                "Run `ollama run llama3.2:1b` or `ollama run codellama` to install a model."
+                "Ollama is running on localhost:11434, but no models are downloaded yet."
             )
 
-        # 1. Try Ollama Chat API
         chat_url = f"{self.base_url}/api/chat"
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        # Optimal CPU parameters for fast high-density answers
+        fast_options = {
+            "num_thread": 4,
+            "num_predict": 120,
+            "num_ctx": 1536,
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "repeat_penalty": 1.15
+        }
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 resp = await client.post(
                     chat_url,
@@ -62,11 +77,7 @@ class OllamaProvider(BaseLLMProvider):
                         "messages": messages,
                         "stream": False,
                         "keep_alive": "60m",
-                        "options": {
-                            "temperature": 0.2,
-                            "top_p": 0.9,
-                            "num_predict": 450
-                        }
+                        "options": fast_options
                     }
                 )
                 if resp.status_code == 200:
@@ -85,17 +96,62 @@ class OllamaProvider(BaseLLMProvider):
                     "prompt": full_prompt,
                     "stream": False,
                     "keep_alive": "60m",
-                    "options": {
-                        "temperature": 0.2,
-                        "top_p": 0.9,
-                        "num_predict": 450
-                    }
+                    "options": fast_options
                 }
             )
             if resp.status_code != 200:
                 raise RuntimeError(f"Ollama error ({resp.status_code}): {resp.text}")
             data = resp.json()
             return data["response"]
+
+    async def stream_response(self, prompt: str, system_prompt: Optional[str] = None):
+        """Streams tokens in real-time with sub-second time-to-first-token"""
+        import json
+        available = await self.get_available_models()
+        active_model = self._resolve_model(available)
+
+        chat_url = f"{self.base_url}/api/chat"
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": active_model,
+            "messages": messages,
+            "stream": True,
+            "keep_alive": "60m",
+            "options": {
+                "num_thread": 4,
+                "num_predict": 120,
+                "num_ctx": 1536,
+                "temperature": 0.1,
+                "top_p": 0.9,
+                "repeat_penalty": 1.15
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            try:
+                async with client.stream("POST", chat_url, json=payload) as resp:
+                    if resp.status_code == 200:
+                        async for line in resp.aiter_lines():
+                            if not line:
+                                continue
+                            try:
+                                chunk = json.loads(line)
+                                tok = chunk.get("message", {}).get("content", "")
+                                if tok:
+                                    yield tok
+                            except Exception:
+                                pass
+                        return
+            except Exception as e:
+                logger.warning("Streaming request failed: %s", e)
+
+        # Fallback if streaming failed
+        full = await self.generate_response(prompt, system_prompt)
+        yield full
 
 class GeminiProvider(BaseLLMProvider):
     def __init__(self, api_key: str):

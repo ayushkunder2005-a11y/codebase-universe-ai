@@ -145,6 +145,7 @@ export interface ChatMessage {
   timestamp: string;
   citations?: ChatCitation[];
   relevant_nodes?: string[];
+  answer_source?: 'llm' | 'static_fallback' | 'error';
 }
 
 export interface ChatResponse {
