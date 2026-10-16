@@ -50,19 +50,21 @@ flowchart TD
 ## ✨ Key Capabilities
 
 ### 1. 🪐 3D Celestial Codebase Universe
-- **Galactic Folders**: Directories cluster into rotating spiral galaxy sectors.
+- **Galactic Folders**: Directories cluster into rotating spiral galaxy sectors spaced at 160+ units.
 - **Star Systems**: Files shine as luminous stars, color-coded by language (Cyan for Python, Blue for TypeScript, Yellow for JavaScript).
-- **Orbiting Planets & Moons**: Classes orbit files as ringed planets, while functions and methods orbit as shimmering satellites.
-- **Constellation Links**: Glowing dependency pulses travel along import and call links in real time.
-- **Flight & Raycasting Navigation**: Orbit, pan, zoom, click to focus camera smoothly on any code symbol.
+- **Anti-Collision Planetary Orbits**: Classes orbit files as major planets (radius 38), while functions orbit on expanding planetary shells (radius 52–160) with dynamic angular division ($2\pi/N$), completely eliminating node collisions and hairball clumping.
+- **Interactive Neighborhood Isolation**: Hovering or clicking any node dims unrelated elements to ~10% opacity while illuminating incoming callers (Emerald Green) and outgoing dependencies (Sky Cyan) with clear directional links.
+- **Level-of-Detail (LoD) Controls**: Toggle between **"All Universe"** (full solar systems with function satellites) and **"Files Only"** (clean architectural view).
+- **Flight & Raycasting Navigation**: Orbit, pan, zoom, click to focus camera smoothly on any code symbol with persistent WebGL stability.
 
 ### 2. 🗺️ 2D Architecture View
-- High-contrast, interactive 2D graph layout for instant structural exploration, relationship inspection, and fast navigation.
+- High-contrast pitch-black cosmic space (`#07090e`) with coordinate grid and rounded pill badges.
+- Dynamic neighborhood isolation and customizable hierarchy containment toggling.
 
 ### 3. 🧠 Multi-Language Code Intelligence Engine
-- **Standard-Compliant AST Parsing**: Extracts functions, async functions, classes, decorators, docstrings, parameters, and return types.
+- **Standard-Compliant AST Parsing**: Extracts functions, async functions, classes, decorators, docstrings, parameters, and return types for Python and JavaScript/TypeScript.
 - **Cyclomatic Complexity**: Measures control-flow branches (`if`, `while`, `for`, `except`, `with`, boolean conditions) per function.
-- **Call Graph Extraction**: Maps caller-to-callee invocations across modules.
+- **Call Graph Extraction**: Maps caller-to-callee invocations across modules with scope-qualified symbol resolution.
 - **Unused Import Detection**: Analyzes bound symbols vs. referenced AST load nodes.
 
 ### 4. 🛡️ Code Quality & Risk Analysis
@@ -75,19 +77,25 @@ flowchart TD
   - **Direct Dependencies**: What this module requires.
   - **Downstream Blast Radius**: Transitive reverse dependency closure.
   - **Regression Test Mapping**: Automatically matches test files (`test_*.py`, `*.test.ts`) that exercise affected code.
-  - **3D Universe Shockwave**: Pulses the entire affected blast radius in bright crimson.
+  - **Universe Shockwave**: Pulses the entire affected blast radius in bright crimson.
 
 ### 6. 🤖 Source-Grounded AI Codebase Assistant
 - Multi-provider support: **Local Ollama** (default, 100% offline & private), **Google Gemini**, **OpenAI GPT-4o**, or **Offline Heuristic Engine**.
-- **Real-Time Token Streaming**: Streams responses via Server-Sent Events (SSE) with sub-2-second Time-to-First-Token and live animated cursor.
+- **Real-Time Token Streaming**: Streams responses via Server-Sent Events (SSE) with sub-second Time-to-First-Token.
 - **Custom `codebase-expert` Model**: Tailored Ollama model with physical CPU core binding (`num_thread: 4`), `keep_alive: 60m` warm caching, and high-density, bulleted IT architectural analysis.
+- **Contextual Inquiries**: Clicking "Ask AI" in the Node Inspector immediately targets that component with pre-computed query suggestions.
 - **Zero Hallucination Guarantee**: Every statement cites verified files and exact line numbers (e.g., `[auth/jwt.py:12-28]`).
-- Transparently labels verified facts versus hypothetical inferences.
 
-### 7. ⚡ Safe AI-Assisted Refactoring
+### 7. ⚡ Safe AI-Assisted Refactoring & Isolated Test Runner
 - Synthesizes clean refactorings based on user objectives (decouple imports, decompose functions, add type hints).
 - **Unified Diff Viewer**: Highlights green additions and red deletions before any changes are written.
+- **Isolated Sandbox Test Validation**: Runs project test suites inside a temporary, isolated sandbox (`tempfile.TemporaryDirectory`) before applying modifications to the working directory.
 - **Isolated Branching**: Creates dedicated git branches (`refactor/...`) upon approval, protecting main repository branches.
+
+### 8. 📥 Comprehensive Repository Ingestion
+- **Local Directory Import**: Directly index any local repository folder.
+- **ZIP Archive Upload**: Unpack and index archives with ZipSlip directory traversal safeguards.
+- **Git URL Cloning**: Safe shallow clone (`--depth 1`) from any public Git repository (HTTPS/SSH) with command-injection sanitization.
 
 ---
 
