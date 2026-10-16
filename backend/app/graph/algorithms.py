@@ -1,4 +1,4 @@
-from typing import List, Dict, Set, Any
+from typing import List, Dict, Set, Any, Tuple
 import networkx as nx
 
 from app.models.graph import CodeGraph, NodeType, EdgeType

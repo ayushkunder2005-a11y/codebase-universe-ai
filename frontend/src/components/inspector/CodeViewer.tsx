@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { api } from '../../api/client';
 import { FileCode, Loader2 } from 'lucide-react';
 
@@ -18,6 +18,13 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const highlightLineRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!loading && highlightStart && highlightLineRef.current) {
+      highlightLineRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [loading, highlightStart]);
 
   useEffect(() => {
     let isMounted = true;
@@ -77,6 +84,7 @@ export const CodeViewer: React.FC<CodeViewerProps> = ({
           return (
             <div
               key={idx}
+              ref={lineNum === highlightStart ? highlightLineRef : undefined}
               className={`flex items-start leading-5 transition-colors ${
                 isHighlighted ? 'bg-sky-500/20 text-sky-100 font-medium' : 'hover:bg-slate-800/40 text-slate-300'
               }`}
