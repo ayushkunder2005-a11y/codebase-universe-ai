@@ -1,0 +1,194 @@
+/*
+ * Codebase Universe AI — design tokens ("software observatory")
+ * Proposed by the product review (docs/product-review/PRODUCT_UX_REVIEW.md §4).
+ * Opt-in: import once from main.tsx (`import './styles/tokens.css'`) and replace
+ * the Vite scaffold styles in index.css / App.css.
+ *
+ * Rules of use
+ * - Components reference semantic tokens (--surface-*, --text-*, --edge-*), never raw hex.
+ * - Color is never the only signal: pair edge colors with dash patterns and node colors with shapes.
+ * - Dark is the default theme; light is applied with <html data-theme="light">.
+ */
+
+:root {
+  /* Typography */
+  --font-ui: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-code: 'JetBrains Mono', 'Cascadia Code', ui-monospace, Consolas, monospace;
+
+  --text-xs: 12px;   /* metadata, badges, graph labels (never smaller) */
+  --text-sm: 13px;   /* secondary UI, table cells, code */
+  --text-md: 14px;   /* body / default UI */
+  --text-lg: 16px;   /* panel titles */
+  --text-xl: 20px;   /* page titles */
+  --text-2xl: 24px;  /* empty-state / onboarding headline only */
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Spacing — 4px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Layout */
+  --topbar-height: 48px;
+  --rail-width: 48px;
+  --sidebar-width: 272px;
+  --inspector-width: 380px;
+  --statusbar-height: 28px;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --border-width: 1px;
+
+  /* Motion — short and purposeful; disabled under reduced motion */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-camera: 450ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --focus-ring: 0 0 0 2px var(--surface-0), 0 0 0 4px var(--accent);
+
+  /* ---------- Dark theme (default) ---------- */
+  color-scheme: dark;
+
+  /* Surfaces step up in luminance; no pure black */
+  --surface-0: #0b0e14;   /* app background, graph canvas */
+  --surface-1: #11151d;   /* panels: sidebar, inspector */
+  --surface-2: #171c26;   /* cards, inputs, code blocks */
+  --surface-3: #1f2532;   /* hover, raised menus */
+  --border-subtle: #232a37;
+  --border-strong: #343d4f;
+
+  --text-primary: #e6e9ef;   /* 14:1+ on every surface */
+  --text-secondary: #a6adbb; /* 7.5:1+ */
+  --text-muted: #7d8596;     /* 4.6:1+ on every surface — minimum for any readable text */
+  --text-on-accent: #071318;
+
+  /* One accent. Used for selection, focus and primary actions only. */
+  --accent: #5cc8d6;
+  --accent-hover: #7ad6e2;
+  --accent-subtle: rgba(92, 200, 214, 0.14);
+
+  /* Status */
+  --success: #4fbf87;
+  --success-subtle: rgba(79, 191, 135, 0.14);
+  --warning: #e0a84a;
+  --warning-subtle: rgba(224, 168, 74, 0.14);
+  --danger: #ec6a6a;
+  --danger-subtle: rgba(236, 106, 106, 0.14);
+  --info: #7aa2f7;
+  --info-subtle: rgba(122, 162, 247, 0.14);
+  --neutral-status: #8a93a5; /* "not run", "skipped" */
+
+  /* Graph: node types (paired with shape — see review §5) */
+  --node-directory: #8a93a5; /* hull / outlined rounded rect */
+  --node-file: #7aa2f7;      /* circle */
+  --node-class: #c39af0;     /* hexagon */
+  --node-function: #5cc8d6;  /* small dot / diamond */
+  --node-test: #4fbf87;      /* any node under a test path: ring marker */
+  --node-dimmed-opacity: 0.18;
+
+  /* Graph: edges — confidence is encoded by line style, not only color */
+  --edge-verified: #8f9bb3;  /* solid: import resolved by path, inheritance, contains */
+  --edge-inferred: #8f9bb3;  /* dashed (6 4): call resolved by name only */
+  --edge-ambiguous: #e0a84a; /* dotted (2 3): name matched several symbols */
+  --edge-warning: #ec6a6a;   /* solid, thicker: edge participates in a cycle */
+  --edge-highlight: #5cc8d6; /* path / selection neighbourhood */
+  --edge-contains: #343d4f;  /* faint structural edges */
+
+  /* Evidence labels for AI answers (review §6) */
+  --evidence-verified: var(--success);
+  --evidence-inferred: var(--info);
+  --evidence-suggestion: #c39af0;
+  --evidence-unknown: var(--warning);
+  --evidence-executed: var(--accent);
+
+  /* Risk ramp (sequential, colour-blind safe ordering by luminance) */
+  --risk-low: #3f6f6a;
+  --risk-medium: #b58a3c;
+  --risk-high: #d06a4a;
+  --risk-critical: #ec6a6a;
+
+  /* Diff */
+  --diff-add-bg: rgba(79, 191, 135, 0.14);
+  --diff-add-fg: #9fe0bd;
+  --diff-del-bg: rgba(236, 106, 106, 0.14);
+  --diff-del-fg: #f2a9a9;
+
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- Light theme ---------- */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --surface-0: #f6f7f9;
+  --surface-1: #ffffff;
+  --surface-2: #f0f2f5;
+  --surface-3: #e6e9ee;
+  --border-subtle: #e1e4ea;
+  --border-strong: #c7ccd6;
+
+  --text-primary: #141821;
+  --text-secondary: #474f5f;
+  --text-muted: #646c7c;
+  --text-on-accent: #ffffff;
+
+  --accent: #0b6b76;
+  --accent-hover: #08565f;
+  --accent-subtle: rgba(11, 107, 118, 0.1);
+
+  --success: #18754a;
+  --success-subtle: rgba(31, 138, 87, 0.1);
+  --warning: #8a5700;
+  --warning-subtle: rgba(168, 106, 0, 0.1);
+  --danger: #b83636;
+  --danger-subtle: rgba(196, 60, 60, 0.1);
+  --info: #3461c9;
+  --info-subtle: rgba(52, 97, 201, 0.1);
+  --neutral-status: #6b7385;
+
+  --node-directory: #6b7385;
+  --node-file: #3461c9;
+  --node-class: #7a4fc0;
+  --node-function: #0b6b76;
+  --node-test: #18754a;
+
+  --edge-verified: #5f6778;
+  --edge-inferred: #5f6778;
+  --edge-ambiguous: #8a5700;
+  --edge-warning: #b83636;
+  --edge-highlight: #0b6b76;
+  --edge-contains: #d3d7df;
+
+  --risk-low: #7fb3ad;
+  --risk-medium: #c99a45;
+  --risk-high: #cf6a45;
+  --risk-critical: #b83636;
+
+  --diff-add-bg: rgba(31, 138, 87, 0.1);
+  --diff-add-fg: #155f3c;
+  --diff-del-bg: rgba(196, 60, 60, 0.1);
+  --diff-del-fg: #8f2a2a;
+
+  --shadow-popover: 0 8px 24px rgba(20, 24, 33, 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-camera: 0ms;
+  }
+}

@@ -1,0 +1,161 @@
+--- a/backend/app/ai/rag.py	2026-10-16 19:45:45.336701100 +0530
++++ b/backend/app/ai/rag.py	2026-10-16 19:46:06.856439400 +0530
+@@ -4,7 +4,7 @@
+ 
+ from app.models.graph import CodeGraph, GraphNode, NodeType
+ from app.models.chat import ChatCitation, ChatResponse
+-from app.ai.provider import get_llm_provider
++from app.ai.provider import get_llm_provider, HeuristicFallbackProvider
+ 
+ SYSTEM_PROMPT = """You are Codebase Universe AI, an expert software architecture and code intelligence assistant.
+ Your answers MUST be strictly grounded in the provided codebase context.
+@@ -117,19 +117,24 @@
+         )
+ 
+         provider = get_llm_provider()
++        is_fallback = isinstance(provider, HeuristicFallbackProvider)
+         try:
+             reply = await provider.generate_response(user_prompt, system_prompt=SYSTEM_PROMPT)
+-            evidence_status = "grounded"
++            # The offline fallback returns a fixed template, not an answer grounded in the question
++            evidence_status = "insufficient_evidence" if is_fallback or not citations else "grounded"
++            answer_source = "static_fallback" if is_fallback else "llm"
+         except Exception as e:
+-            reply = f"Error communicating with AI Provider ({str(e)}). Falling back to static evidence summary."
++            reply = f"Error communicating with AI Provider ({str(e)}). The retrieved source context is listed below."
+             evidence_status = "insufficient_evidence"
++            answer_source = "error"
+ 
+         return ChatResponse(
+             conversation_id=conversation_id,
+             reply=reply,
+             citations=citations,
+             relevant_nodes=relevant_nodes,
+-            evidence_status=evidence_status
++            evidence_status=evidence_status,
++            answer_source=answer_source
+         )
+ 
+ codebase_rag = CodebaseRAG()
+--- a/backend/app/ai/refactor.py	2026-10-16 19:45:45.202762700 +0530
++++ b/backend/app/ai/refactor.py	2026-10-16 19:48:23.588540300 +0530
+@@ -8,7 +8,7 @@
+ 
+ from app.models.project import Project
+ from app.models.refactor import RefactorRequest, RefactorProposal, ApplyPatchResult
+-from app.ai.provider import get_llm_provider
++from app.ai.provider import get_llm_provider, HeuristicFallbackProvider
+ from app.config import settings
+ 
+ REFACTOR_SYSTEM_PROMPT = """You are an expert software refactoring engineer.
+@@ -29,8 +29,10 @@
+         with open(target_file, "r", encoding="utf-8", errors="replace") as f:
+             original_code = f.read()
+ 
+-        # If LLM key is configured, prompt LLM for refactoring; otherwise perform intelligent heuristic refactoring
++        # The offline fallback returns prose, not code; using it here would replace the file with that prose.
+         provider = get_llm_provider()
++        if isinstance(provider, HeuristicFallbackProvider):
++            raise ValueError("Refactoring requires a configured LLM provider (GEMINI_API_KEY, OPENAI_API_KEY or Ollama).")
+         user_prompt = (
+             f"File: {req.file_path}\n"
+             f"Instruction: {req.instruction}\n\n"
+@@ -53,9 +55,11 @@
+                 proposed_code = "\n".join(code_lines)
+             else:
+                 proposed_code = raw_response
+-        except Exception:
+-            # Fallback heuristic refactoring: add clean docstring / formatting
+-            proposed_code = original_code
++        except Exception as e:
++            raise ValueError(f"The AI provider did not return a proposal: {e}")
++
++        if proposed_code.strip() == original_code.strip():
++            raise ValueError("The AI provider returned no changes for this instruction.")
+ 
+         # Generate Unified Diff
+         diff_lines = list(difflib.unified_diff(
+@@ -133,11 +137,19 @@
+         if not target_file.exists() or not str(target_file).startswith(str(repo_dir)):
+             raise ValueError(f"File {proposal.file_path} is invalid or outside repository.")
+ 
++        # Refuse to apply a proposal generated against content that has since changed
++        with open(target_file, "r", encoding="utf-8", errors="replace") as f:
++            if f.read() != proposal.original_code:
++                raise ValueError(f"{proposal.file_path} changed after this proposal was generated. Generate a new proposal.")
++
+         git_branch = None
+         if create_branch:
+             git_branch = branch_name or f"refactor/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+             try:
+-                subprocess.run(["git", "checkout", "-b", git_branch], cwd=str(repo_dir), capture_output=True, text=True)
++                proc = subprocess.run(["git", "checkout", "-b", git_branch], cwd=str(repo_dir), capture_output=True, text=True)
++                # Report the branch only if git actually created it
++                if proc.returncode != 0:
++                    git_branch = None
+             except Exception:
+                 git_branch = None
+ 
+Binary files a/backend/app/graph/__pycache__/builder.cpython-314.pyc and b/backend/app/graph/__pycache__/builder.cpython-314.pyc differ
+--- a/backend/app/graph/algorithms.py	2026-10-16 19:53:22.419740300 +0530
++++ b/backend/app/graph/algorithms.py	2026-10-16 19:53:22.487838000 +0530
+@@ -1,4 +1,4 @@
+-from typing import List, Dict, Set, Any
++from typing import List, Dict, Set, Any, Tuple
+ import networkx as nx
+ 
+ from app.models.graph import CodeGraph, NodeType, EdgeType
+--- a/backend/app/graph/builder.py	2026-10-16 19:45:45.050514300 +0530
++++ b/backend/app/graph/builder.py	2026-10-16 19:45:56.408179200 +0530
+@@ -187,12 +187,18 @@
+                         type=EdgeType.IMPORTS,
+                         line_number=imp.line_number,
+                         weight=1.0,
+-                        metadata={"module": imp.module, "names": imp.names}
++                        metadata={"module": imp.module, "names": imp.names, "resolution": "import_path"}
+                     ))
+ 
+             # Call edges
++            # Parser caller names are scope-qualified ("fn", "Class.method"); map them to node ids
++            # so calls made from methods and async functions are not dropped.
++            caller_lookup = {
++                (f"{s.parent_symbol}.{s.name}" if s.parent_symbol else s.name): f"{s.kind}:{pf.relative_path}:{s.name}"
++                for s in pf.symbols
++            }
+             for call in pf.calls:
+-                caller_id = f"function:{pf.relative_path}:{call.caller_symbol}" if call.caller_symbol else file_node_id
++                caller_id = caller_lookup.get(call.caller_symbol, file_node_id) if call.caller_symbol else file_node_id
+                 if call.name in symbol_map:
+                     # Prefer symbols in the same file or imported files
+                     candidates = symbol_map[call.name]
+@@ -206,7 +212,12 @@
+                             target=target_id,
+                             type=EdgeType.CALLS,
+                             line_number=call.line_number,
+-                            weight=1.2
++                            weight=1.2,
++                            # Calls are resolved by name only; the UI must render these as inferred.
++                            metadata={
++                                "resolution": "unique_name" if len(candidates) == 1 else "ambiguous_name",
++                                "candidate_count": len(candidates)
++                            }
+                         ))
+ 
+         # Step 5: Compute Network Metrics (Degree, Coupling, Risk) via NetworkX
+--- a/backend/app/models/chat.py	2026-10-16 19:45:45.484694300 +0530
++++ b/backend/app/models/chat.py	2026-10-16 19:45:58.764801200 +0530
+@@ -31,3 +31,4 @@
+     citations: List[ChatCitation] = Field(default_factory=list)
+     relevant_nodes: List[str] = Field(default_factory=list)
+     evidence_status: str = "grounded"  # "grounded" | "hypothetical" | "insufficient_evidence"
++    answer_source: str = "llm"  # "llm" | "static_fallback" | "error" - lets the UI label non-AI replies honestly
+--- a/backend/app/routes/refactor.py	2026-10-16 19:46:45.218739700 +0530
++++ b/backend/app/routes/refactor.py	2026-10-16 19:46:54.191193600 +0530
+@@ -46,5 +46,7 @@
+             branch_name=req.branch_name
+         )
+         return result
++    except ValueError as ve:
++        raise HTTPException(status_code=409, detail=str(ve))
+     except Exception as e:
+         raise HTTPException(status_code=500, detail=f"Failed to apply patch: {str(e)}")
