@@ -39,6 +39,7 @@ export function App() {
   const [showRiskDashboard, setShowRiskDashboard] = useState(false);
   const [impactResult, setImpactResult] = useState<ImpactAnalysisResult | null>(null);
   const [refactorTargetNode, setRefactorTargetNode] = useState<GraphNode | null>(null);
+  const [assistantInitialPrompt, setAssistantInitialPrompt] = useState<string | undefined>();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -249,6 +250,7 @@ export function App() {
             onTriggerImpact={handleTriggerImpact}
             onTriggerRefactor={node => setRefactorTargetNode(node)}
             onAskAboutNode={node => {
+              setAssistantInitialPrompt(`Explain the role, architecture, and callers of ${node.name} (${node.file_path || node.id})`);
               setIsAssistantOpen(true);
             }}
           />
@@ -259,7 +261,11 @@ export function App() {
           <AssistantPanel
             projectId={activeProject.id}
             selectedNode={selectedNode}
-            onClose={() => setIsAssistantOpen(false)}
+            initialPrompt={assistantInitialPrompt}
+            onClose={() => {
+              setIsAssistantOpen(false);
+              setAssistantInitialPrompt(undefined);
+            }}
             onSelectCitation={handleSelectCitation}
           />
         )}

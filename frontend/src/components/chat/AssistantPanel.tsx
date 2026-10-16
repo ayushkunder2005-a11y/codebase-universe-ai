@@ -19,6 +19,7 @@ import {
 interface AssistantPanelProps {
   projectId: string;
   selectedNode: GraphNode | null;
+  initialPrompt?: string;
   onClose: () => void;
   onSelectCitation: (citation: ChatCitation) => void;
 }
@@ -42,6 +43,7 @@ const PRESET_QUERIES = [
 export const AssistantPanel: React.FC<AssistantPanelProps> = ({
   projectId,
   selectedNode,
+  initialPrompt,
   onClose,
   onSelectCitation
 }) => {
@@ -58,6 +60,7 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastPromptRef = useRef<string | undefined>(undefined);
 
   // Fetch Ollama connection status
   const checkOllama = async () => {
@@ -72,6 +75,13 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
   useEffect(() => {
     checkOllama();
   }, []);
+
+  useEffect(() => {
+    if (initialPrompt && initialPrompt.trim() && initialPrompt !== lastPromptRef.current) {
+      lastPromptRef.current = initialPrompt;
+      handleSend(initialPrompt);
+    }
+  }, [initialPrompt]);
 
   const handleSelectModel = async (model: string) => {
     setSwitchingModel(true);
@@ -322,22 +332,48 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Preset Suggestions */}
+      {/* Contextual Suggestions */}
       <div className="px-3 py-2 border-t border-slate-800/80 bg-slate-950/40">
-        <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block mb-1">
-          Suggested Inquiries
-        </span>
-        <div className="flex flex-wrap gap-1">
-          {PRESET_QUERIES.slice(0, 2).map((q, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSend(q)}
-              className="text-[10px] text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-800 px-2 py-1 rounded-md transition-colors truncate max-w-full"
-            >
-              {q}
-            </button>
-          ))}
-        </div>
+        {selectedNode ? (
+          <div className="space-y-1.5">
+            <div className="flex items-center space-x-1.5 text-[10px] text-sky-300 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+              <span>Target: <strong>{selectedNode.name}</strong> ({selectedNode.type})</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {[
+                `Explain architecture and logic of ${selectedNode.name}`,
+                `Who calls or imports ${selectedNode.name}?`,
+                `What breaks if I change ${selectedNode.name}?`
+              ].map((q, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSend(q)}
+                  className="text-[10px] text-sky-200/80 hover:text-white bg-sky-950/40 hover:bg-sky-900/60 border border-sky-800/50 px-2 py-1 rounded-md transition-colors truncate max-w-full text-left"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block mb-1">
+              Suggested Inquiries
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {PRESET_QUERIES.slice(0, 2).map((q, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSend(q)}
+                  className="text-[10px] text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-800 px-2 py-1 rounded-md transition-colors truncate max-w-full"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Input Box */}
