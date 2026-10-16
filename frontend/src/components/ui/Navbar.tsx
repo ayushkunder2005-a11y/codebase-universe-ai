@@ -107,17 +107,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span>Risk Report</span>
         </button>
 
-        {/* AI Assistant Button */}
+        {/* AI Assistant Button with Ollama Badge */}
         <button
           onClick={onToggleAssistant}
           className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
             isAssistantOpen
-              ? 'bg-sky-500 text-slate-950 shadow-md font-bold'
-              : 'bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-sky-400'
+              ? 'bg-emerald-500 text-slate-950 shadow-md font-bold'
+              : 'bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-emerald-400'
           }`}
         >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>AI Assistant</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+          <span>Ask Ollama AI</span>
         </button>
       </div>
     </header>

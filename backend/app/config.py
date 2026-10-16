@@ -14,11 +14,11 @@ class Settings(BaseSettings):
     MONGODB_DB_NAME: str = "codebase_universe"
     
     # LLM Provider
-    LLM_PROVIDER: str = "gemini"  # gemini, openai, ollama, mock
+    LLM_PROVIDER: str = "ollama"  # ollama, gemini, openai, mock
     GEMINI_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "codellama:latest"
+    OLLAMA_MODEL: str = "llama3.2:1b"
 
     # Storage paths
     BASE_DIR: Path = Path(__file__).resolve().parent.parent

@@ -195,5 +195,31 @@ export const api = {
     const res = await fetch(url.toString());
     if (!res.ok) throw new Error('Failed to fetch file content');
     return res.json();
+  },
+
+  async getOllamaStatus(): Promise<{ connected: boolean; provider: string; base_url: string; active_model: string; models: string[]; error?: string }> {
+    const res = await fetch(`${BASE_URL}/api/ollama/status`);
+    if (!res.ok) throw new Error('Failed to fetch Ollama status');
+    return res.json();
+  },
+
+  async selectOllamaModel(model: string): Promise<{ status: string; active_model: string; provider: string }> {
+    const res = await fetch(`${BASE_URL}/api/ollama/model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model })
+    });
+    if (!res.ok) throw new Error('Failed to select Ollama model');
+    return res.json();
+  },
+
+  async pullOllamaModel(model: string): Promise<{ status: string; model: string; message: string }> {
+    const res = await fetch(`${BASE_URL}/api/ollama/pull`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model })
+    });
+    if (!res.ok) throw new Error('Failed to trigger model pull');
+    return res.json();
   }
 };

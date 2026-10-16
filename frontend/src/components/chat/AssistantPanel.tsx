@@ -10,7 +10,10 @@ import {
   AlertTriangle,
   X,
   Bot,
-  User
+  User,
+  Cpu,
+  RefreshCw,
+  CheckCircle2
 } from 'lucide-react';
 
 interface AssistantPanelProps {
@@ -18,6 +21,15 @@ interface AssistantPanelProps {
   selectedNode: GraphNode | null;
   onClose: () => void;
   onSelectCitation: (citation: ChatCitation) => void;
+}
+
+interface OllamaStatus {
+  connected: boolean;
+  provider: string;
+  base_url: string;
+  active_model: string;
+  models: string[];
+  error?: string;
 }
 
 const PRESET_QUERIES = [
@@ -33,17 +45,45 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
   onClose,
   onSelectCitation
 }) => {
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
+  const [switchingModel, setSwitchingModel] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       sender: 'assistant',
-      content: `Hello! I am your Codebase Universe Software Intelligence Assistant. I am directly connected to the AST and dependency graph of this project.\n\nAsk me about architecture, call chains, coupling, or refactoring impact. All my answers are grounded in indexed files with verified citations.`,
+      content: `Hello! I am your Codebase Universe Assistant running on your local Ollama engine.\n\nAll source code reasoning and AST graph inspections are executed directly on your machine with 100% privacy and grounded citations.`,
       timestamp: new Date().toISOString()
     }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch Ollama connection status
+  const checkOllama = async () => {
+    try {
+      const status = await api.getOllamaStatus();
+      setOllamaStatus(status);
+    } catch {
+      setOllamaStatus(null);
+    }
+  };
+
+  useEffect(() => {
+    checkOllama();
+  }, []);
+
+  const handleSelectModel = async (model: string) => {
+    setSwitchingModel(true);
+    try {
+      await api.selectOllamaModel(model);
+      await checkOllama();
+    } catch (err: any) {
+      alert(`Could not select model: ${err.message}`);
+    } finally {
+      setSwitchingModel(false);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -83,7 +123,8 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
         content: res.reply,
         timestamp: new Date().toISOString(),
         citations: res.citations,
-        relevant_nodes: res.relevant_nodes
+        relevant_nodes: res.relevant_nodes,
+        answer_source: res.answer_source
       };
 
       setMessages(prev => [...prev, asstMsg]);
@@ -93,7 +134,7 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
         {
           id: (Date.now() + 1).toString(),
           sender: 'assistant',
-          content: `Error: ${err.message || 'Failed to reach AI service'}. Please check your connection or LLM settings.`,
+          content: `Error: ${err.message || 'Failed to reach Ollama AI engine'}. Ensure Ollama is running at localhost:11434.`,
           timestamp: new Date().toISOString()
         }
       ]);
@@ -103,18 +144,23 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
   };
 
   return (
-    <div className="w-[420px] glass-panel border-l border-slate-800 flex flex-col h-full z-30 transition-all select-text shadow-2xl">
+    <div className="w-[430px] glass-panel border-l border-slate-800 flex flex-col h-full z-30 transition-all select-text shadow-2xl">
       {/* Header */}
       <div className="p-3.5 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50">
         <div className="flex items-center space-x-2.5">
-          <div className="p-1.5 rounded-lg bg-sky-500/20 text-sky-400">
-            <Sparkles className="w-4 h-4" />
+          <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+            <Cpu className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white">Codebase Intelligence AI</h3>
-            <span className="text-[11px] text-emerald-400 flex items-center space-x-1">
-              <ShieldCheck className="w-3 h-3" />
-              <span>Grounded in AST Index</span>
+            <h3 className="text-sm font-semibold text-white flex items-center space-x-1.5">
+              <span>Codebase AI</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
+                Ollama Engine
+              </span>
+            </h3>
+            <span className="text-[11px] text-slate-400 flex items-center space-x-1">
+              <ShieldCheck className="w-3 h-3 text-emerald-400" />
+              <span>Private Local Inference</span>
             </span>
           </div>
         </div>
@@ -126,9 +172,48 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
         </button>
       </div>
 
+      {/* Ollama Engine Connection Bar */}
+      <div className="px-3.5 py-2 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between text-xs">
+        <div className="flex items-center space-x-2 truncate">
+          <span className="relative flex h-2 w-2">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${ollamaStatus?.connected ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${ollamaStatus?.connected ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+          </span>
+          <span className="text-slate-300 font-medium truncate">
+            {ollamaStatus?.connected ? 'Ollama Online' : 'Ollama Connecting...'}
+          </span>
+        </div>
+
+        {ollamaStatus?.connected && ollamaStatus.models.length > 0 && (
+          <div className="flex items-center space-x-1.5">
+            <span className="text-[10px] text-slate-500">Model:</span>
+            <select
+              value={ollamaStatus.active_model}
+              onChange={e => handleSelectModel(e.target.value)}
+              disabled={switchingModel}
+              className="bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-[11px] text-emerald-300 font-mono focus:outline-none focus:border-emerald-500 cursor-pointer"
+            >
+              {ollamaStatus.models.map(m => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <button
+          onClick={checkOllama}
+          className="p-1 text-slate-500 hover:text-slate-300 rounded hover:bg-slate-900 transition-colors"
+          title="Refresh Ollama Connection"
+        >
+          <RefreshCw className="w-3 h-3" />
+        </button>
+      </div>
+
       {/* Selected Node Context Pill */}
       {selectedNode && (
-        <div className="px-3 py-1.5 bg-slate-900/70 border-b border-slate-800/60 flex items-center justify-between text-xs text-slate-300">
+        <div className="px-3.5 py-1.5 bg-slate-900/70 border-b border-slate-800/60 flex items-center justify-between text-xs text-slate-300">
           <span className="truncate flex items-center space-x-1.5">
             <span className="text-slate-500">Focus:</span>
             <strong className="text-sky-300 font-mono truncate">{selectedNode.name}</strong>
@@ -149,8 +234,8 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
             <div className="flex items-center space-x-1.5 mb-1 text-[11px] text-slate-400">
               {msg.sender === 'assistant' ? (
                 <>
-                  <Bot className="w-3 h-3 text-sky-400" />
-                  <span>Universe AI</span>
+                  <Cpu className="w-3 h-3 text-emerald-400" />
+                  <span className="font-semibold text-slate-300">Ollama ({ollamaStatus?.active_model || 'llama3.2:1b'})</span>
                   {(msg as any).answer_source === 'static_fallback' && (
                     <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 text-[9px] border border-slate-700">
                       Static Index
@@ -200,9 +285,9 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
         ))}
 
         {loading && (
-          <div className="flex items-center space-x-2 p-3 bg-slate-900/70 border border-slate-800 rounded-xl max-w-[80%] text-slate-300">
-            <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
-            <span>Analyzing indexed graph and inspecting code snippets...</span>
+          <div className="flex items-center space-x-2 p-3 bg-slate-900/70 border border-slate-800 rounded-xl max-w-[85%] text-slate-300">
+            <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+            <span>Ollama ({ollamaStatus?.active_model || 'llama3.2:1b'}) is synthesizing grounded response...</span>
           </div>
         )}
 
@@ -240,14 +325,14 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder="Ask about architecture, dependencies, or flow..."
-            className="flex-1 bg-slate-950 border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-colors"
+            placeholder={`Ask Ollama about architecture or dependencies...`}
+            className="flex-1 bg-slate-950 border border-slate-700/80 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
             disabled={loading}
           />
           <button
             type="submit"
             disabled={loading || !input.trim()}
-            className="p-2 bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-bold rounded-lg transition-colors shrink-0"
+            className="p-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold rounded-lg transition-colors shrink-0 shadow"
           >
             <Send className="w-4 h-4" />
           </button>

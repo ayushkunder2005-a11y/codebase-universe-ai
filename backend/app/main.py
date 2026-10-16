@@ -16,6 +16,7 @@ from app.routes.analysis import router as analysis_router
 from app.routes.chat import router as chat_router
 from app.routes.refactor import router as refactor_router
 from app.routes.files import router as files_router
+from app.routes.ollama import router as ollama_router
 from app.models.project import Project, ProjectStatus, ProjectSourceType
 
 @asynccontextmanager
@@ -98,6 +99,7 @@ app.include_router(analysis_router)
 app.include_router(chat_router)
 app.include_router(refactor_router)
 app.include_router(files_router)
+app.include_router(ollama_router)
 
 @app.get("/api/health")
 async def health_check():
