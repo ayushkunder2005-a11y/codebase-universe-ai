@@ -61,9 +61,11 @@ class OllamaProvider(BaseLLMProvider):
                         "model": active_model,
                         "messages": messages,
                         "stream": False,
+                        "keep_alive": "60m",
                         "options": {
                             "temperature": 0.2,
-                            "top_p": 0.9
+                            "top_p": 0.9,
+                            "num_predict": 450
                         }
                     }
                 )
@@ -82,9 +84,11 @@ class OllamaProvider(BaseLLMProvider):
                     "model": active_model,
                     "prompt": full_prompt,
                     "stream": False,
+                    "keep_alive": "60m",
                     "options": {
                         "temperature": 0.2,
-                        "top_p": 0.9
+                        "top_p": 0.9,
+                        "num_predict": 450
                     }
                 }
             )

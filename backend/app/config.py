@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.2:1b"
+    OLLAMA_MODEL: str = "codebase-expert"
 
     # Storage paths
     BASE_DIR: Path = Path(__file__).resolve().parent.parent
