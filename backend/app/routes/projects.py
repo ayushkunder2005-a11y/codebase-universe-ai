@@ -1,6 +1,7 @@
 import os
 import uuid
 import shutil
+import subprocess
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks
@@ -57,6 +58,25 @@ async def create_project(req: ProjectCreate, background_tasks: BackgroundTasks):
         if not local_dir.exists() or not local_dir.is_dir():
             raise HTTPException(status_code=400, detail=f"Directory does not exist: {req.local_path}")
         repo_path = local_dir
+    elif req.source_type == ProjectSourceType.GIT_REPO:
+        if not req.git_url:
+            raise HTTPException(status_code=400, detail="git_url is required for Git repository import")
+        clean_url = req.git_url.strip()
+        if not (clean_url.startswith("https://") or clean_url.startswith("http://") or clean_url.startswith("git@")):
+            raise HTTPException(status_code=400, detail="Invalid Git URL. Must start with https://, http://, or git@")
+        if any(c in clean_url for c in [";", "&", "|", "`", "$", "\n", "\r"]):
+            raise HTTPException(status_code=400, detail="Disallowed characters in Git URL.")
+
+        repo_path = settings.REPOS_DIR / project_id
+        try:
+            cmd = ["git", "clone", "--depth", "1", clean_url, str(repo_path)]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+            if proc.returncode != 0:
+                raise ValueError(f"Git clone failed: {proc.stderr.strip() or proc.stdout.strip()}")
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=408, detail="Git clone operation timed out after 90 seconds.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to clone Git repository: {str(e)}")
     else:
         raise HTTPException(status_code=400, detail="Use upload endpoint for archives or samples endpoint for sample projects.")
 

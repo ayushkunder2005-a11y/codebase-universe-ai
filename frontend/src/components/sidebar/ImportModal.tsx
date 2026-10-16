@@ -8,7 +8,8 @@ import {
   Loader2,
   X,
   FileCode,
-  AlertCircle
+  AlertCircle,
+  GitBranch
 } from 'lucide-react';
 
 interface ImportModalProps {
@@ -20,8 +21,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   onClose,
   onProjectLoaded
 }) => {
-  const [tab, setTab] = useState<'sample' | 'folder' | 'zip'>('sample');
+  const [tab, setTab] = useState<'sample' | 'folder' | 'zip' | 'git'>('sample');
   const [localPath, setLocalPath] = useState('');
+  const [gitUrl, setGitUrl] = useState('');
   const [projectName, setProjectName] = useState('');
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,6 +75,22 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     }
   };
 
+  const handleCloneGit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gitUrl.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const proj = await api.cloneGitRepo(gitUrl.trim(), projectName);
+      onProjectLoaded(proj);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to clone Git repository');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
       <div className="glass-panel w-full max-w-lg rounded-2xl flex flex-col overflow-hidden border border-slate-700/80 shadow-2xl">
@@ -99,7 +117,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             }`}
           >
             <Play className="w-3.5 h-3.5" />
-            <span>Pre-built Samples</span>
+            <span>Samples</span>
           </button>
           <button
             onClick={() => setTab('folder')}
@@ -108,7 +126,16 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             }`}
           >
             <FolderPlus className="w-3.5 h-3.5" />
-            <span>Local Folder</span>
+            <span>Folder</span>
+          </button>
+          <button
+            onClick={() => setTab('git')}
+            className={`flex-1 py-3 font-semibold transition-colors border-b-2 flex items-center justify-center space-x-1.5 ${
+              tab === 'git' ? 'border-sky-400 text-sky-400 bg-sky-500/5' : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            <span>Git URL</span>
           </button>
           <button
             onClick={() => setTab('zip')}
@@ -117,7 +144,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             }`}
           >
             <UploadCloud className="w-3.5 h-3.5" />
-            <span>Upload ZIP</span>
+            <span>ZIP</span>
           </button>
         </div>
 
@@ -204,6 +231,43 @@ export const ImportModal: React.FC<ImportModalProps> = ({
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                 <span>{loading ? 'Scanning & Parsing...' : 'Import Directory'}</span>
+              </button>
+            </form>
+          )}
+
+          {tab === 'git' && (
+            <form onSubmit={handleCloneGit} className="space-y-3">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Project Name (Optional)</label>
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={e => setProjectName(e.target.value)}
+                  placeholder="e.g. FastAPI Core"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Git Repository URL (HTTPS or SSH)</label>
+                <input
+                  type="text"
+                  value={gitUrl}
+                  onChange={e => setGitUrl(e.target.value)}
+                  placeholder="e.g. https://github.com/fastapi/fastapi"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-sky-500 font-mono"
+                  required
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Performs a safe shallow clone (<code className="text-slate-400">--depth 1</code>) directly into local storage.
+                </span>
+              </div>
+              <button
+                type="submit"
+                disabled={loading || !gitUrl.trim()}
+                className="w-full py-2.5 bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-bold rounded-lg transition-colors flex items-center justify-center space-x-2"
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>{loading ? 'Cloning & Indexing...' : 'Clone & Launch Universe'}</span>
               </button>
             </form>
           )}

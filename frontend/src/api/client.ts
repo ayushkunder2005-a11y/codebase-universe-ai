@@ -48,6 +48,23 @@ export const api = {
     return res.json();
   },
 
+  async cloneGitRepo(gitUrl: string, name?: string): Promise<Project> {
+    const res = await fetch(`${BASE_URL}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name || '',
+        source_type: 'git_repo',
+        git_url: gitUrl
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Git clone failed' }));
+      throw new Error(err.detail || 'Git clone failed');
+    }
+    return res.json();
+  },
+
   async uploadProjectZip(file: File, name?: string): Promise<Project> {
     const formData = new FormData();
     formData.append('file', file);

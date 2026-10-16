@@ -70,12 +70,25 @@ class RefactorEngine:
         ))
         unified_diff = "".join(diff_lines)
 
-        # Test validation execution if requested
+        # Identify affected tests using change impact analysis
+        affected_tests: List[str] = []
+        try:
+            from app.db.storage import storage
+            from app.graph.impact import impact_engine
+            graph = await storage.get_graph(project.id)
+            if graph:
+                impact = impact_engine.analyze_impact(graph, f"file:{req.file_path}")
+                if impact:
+                    affected_tests = impact.related_tests
+        except Exception:
+            pass
+
+        # Test validation execution if requested in an isolated sandbox
         test_status = "not_run"
         test_output = None
 
         if req.run_tests and settings.ENABLE_TEST_RUNNER:
-            test_status, test_output = self._run_tests(repo_dir)
+            test_status, test_output = self._run_isolated_tests(repo_dir, req.file_path, proposed_code)
 
         return RefactorProposal(
             id=proposal_id,
@@ -86,42 +99,62 @@ class RefactorEngine:
             original_code=original_code,
             proposed_code=proposed_code,
             unified_diff=unified_diff,
+            affected_tests=affected_tests,
             test_validation_status=test_status,
             test_output=test_output,
             created_at=datetime.utcnow().isoformat()
         )
 
-    def _run_tests(self, repo_dir: Path) -> (str, str):
+    def _run_isolated_tests(self, repo_dir: Path, rel_file_path: str, proposed_code: str) -> (str, str):
         """
-        Runs available automated tests in the project with strict timeout.
+        Runs available automated tests in an isolated temporary sandbox with the proposed code applied.
+        Ensures the user's working copy is completely untouched and test output is real.
         """
+        import tempfile
         try:
-            has_py = any(repo_dir.glob("**/test_*.py")) or (repo_dir / "pytest.ini").exists()
-            has_package_json = (repo_dir / "package.json").exists()
+            with tempfile.TemporaryDirectory(prefix="refactor_sandbox_") as tmp_dir:
+                sandbox_path = Path(tmp_dir)
 
-            if has_py:
-                cmd = ["pytest", "-q"]
-            elif has_package_json:
-                cmd = ["npm", "test", "--", "--run"]
-            else:
-                return "skipped", "No test suite detected in repository."
+                def ignore_heavy(dir_name, contents):
+                    ignored = []
+                    for c in contents:
+                        if c in [".git", "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache"]:
+                            ignored.append(c)
+                    return ignored
 
-            proc = subprocess.run(
-                cmd,
-                cwd=str(repo_dir),
-                capture_output=True,
-                text=True,
-                timeout=12
-            )
+                shutil.copytree(repo_dir, sandbox_path, dirs_exist_ok=True, ignore=ignore_heavy)
 
-            status = "passed" if proc.returncode == 0 else "failed"
-            output = proc.stdout + ("\n" + proc.stderr if proc.stderr else "")
-            return status, output[:1500]
+                target_sandbox_file = sandbox_path / rel_file_path
+                target_sandbox_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(target_sandbox_file, "w", encoding="utf-8") as f:
+                    f.write(proposed_code)
+
+                has_py = any(sandbox_path.glob("**/test_*.py")) or (sandbox_path / "pytest.ini").exists()
+                has_package_json = (sandbox_path / "package.json").exists()
+
+                if has_py:
+                    cmd = ["pytest", "-q"]
+                elif has_package_json:
+                    cmd = ["npm", "test", "--", "--run"]
+                else:
+                    return "skipped", "No test suite detected in repository."
+
+                proc = subprocess.run(
+                    cmd,
+                    cwd=str(sandbox_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+
+                status = "passed" if proc.returncode == 0 else "failed"
+                output = proc.stdout + ("\n" + proc.stderr if proc.stderr else "")
+                return status, output[:2000]
 
         except subprocess.TimeoutExpired:
-            return "failed", "Test execution timed out after 12 seconds."
+            return "failed", "Isolated test execution timed out after 15 seconds."
         except Exception as e:
-            return "skipped", f"Test runner unavailable: {str(e)}"
+            return "skipped", f"Isolated test runner unavailable: {str(e)}"
 
     def apply_proposal(
         self,
