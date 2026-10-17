@@ -111,6 +111,13 @@ async def health_check():
         "max_upload_size_mb": settings.MAX_UPLOAD_SIZE_MB
     }
 
+# Mount static frontend production build if present
+frontend_dist = settings.BASE_DIR.parent / "frontend" / "dist"
+if frontend_dist.exists() and (frontend_dist / "index.html").exists():
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host=settings.API_HOST, port=settings.API_PORT, reload=True)
+

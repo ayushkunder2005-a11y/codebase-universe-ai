@@ -22,6 +22,8 @@ dist-ssr/
 # Storage & Uploads
 backend/storage/uploads/
 backend/storage/repos/
+backend/storage/data/
+recordings/
 *.log
 .DS_Store
 Thumbs.db
