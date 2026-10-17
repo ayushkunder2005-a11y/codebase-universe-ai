@@ -6,6 +6,10 @@ Transform any software repository into an interactive, navigable 3D visual unive
 
 ---
 
+![Codebase Universe AI 3D Celestial Architecture](docs/screenshots/codebase_universe_3d.png)
+
+---
+
 ```mermaid
 flowchart TD
     subgraph Client["Frontend (React 19 + Vite + TypeScript)"]
