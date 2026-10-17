@@ -238,9 +238,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     renderer.domElement.addEventListener('webglcontextlost', handleContextLost);
 
     // Animation Loop
-    let clock = new THREE.Clock();
+    const startTime = performance.now() * 0.001;
     const animate = () => {
-      const elapsedTime = clock.getElapsedTime();
+      const elapsedTime = performance.now() * 0.001 - startTime;
 
       // Subtle celestial rotation
       if (starFieldRef.current) {

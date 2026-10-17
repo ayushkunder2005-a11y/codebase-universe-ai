@@ -46,21 +46,24 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
   }
 
   // Find incoming & outgoing nodes
-  const incomingNodes: GraphNode[] = [];
-  const outgoingNodes: GraphNode[] = [];
+  const incomingNodesMap = new Map<string, GraphNode>();
+  const outgoingNodesMap = new Map<string, GraphNode>();
 
   if (graph) {
     graph.edges.forEach(e => {
       if (e.target === node.id) {
         const src = nodeMap.get(e.source);
-        if (src) incomingNodes.push(src);
+        if (src && !incomingNodesMap.has(src.id)) incomingNodesMap.set(src.id, src);
       }
       if (e.source === node.id) {
         const tgt = nodeMap.get(e.target);
-        if (tgt) outgoingNodes.push(tgt);
+        if (tgt && !outgoingNodesMap.has(tgt.id)) outgoingNodesMap.set(tgt.id, tgt);
       }
     });
   }
+
+  const incomingNodes = Array.from(incomingNodesMap.values());
+  const outgoingNodes = Array.from(outgoingNodesMap.values());
 
   const getNodeIcon = (type: NodeType) => {
     switch (type) {
